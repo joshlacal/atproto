@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+RUN pip install --no-cache-dir flask
+
+# Copy sidecar server
+COPY example-sidecar-server.py /app/sidecar-server.py
+
+# Make executable
+RUN chmod +x /app/sidecar-server.py
+
+# Expose port
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3001/health')"
+
+# Run the sidecar server
+CMD ["python", "/app/sidecar-server.py"]

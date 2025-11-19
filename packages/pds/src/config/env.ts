@@ -98,6 +98,11 @@ export const readEnv = (): ServerEnvironment => {
 
     // subscription
     maxSubscriptionBuffer: envInt('PDS_MAX_SUBSCRIPTION_BUFFER'),
+
+    // plugins
+    pluginsEnabled: envBool('PDS_PLUGINS_ENABLED'),
+    pluginsDataDirectory: envStr('PDS_PLUGINS_DATA_DIRECTORY'),
+    pluginsConfig: envStr('PDS_PLUGINS_CONFIG'),
     repoBackfillLimitMs: envInt('PDS_REPO_BACKFILL_LIMIT_MS'),
 
     // appview
@@ -248,6 +253,11 @@ export type ServerEnvironment = {
   // subscription
   maxSubscriptionBuffer?: number
   repoBackfillLimitMs?: number
+
+  // plugins
+  pluginsEnabled?: boolean
+  pluginsDataDirectory?: string
+  pluginsConfig?: string
 
   // appview
   bskyAppViewUrl?: string

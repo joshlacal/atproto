@@ -324,6 +324,14 @@ export const envToCfg = (env: ServerEnvironment): ServerConfig => {
     didAuthority: env.lexiconDidAuthority,
   }
 
+  const pluginsCfg: ServerConfig['plugins'] = env.pluginsEnabled
+    ? {
+        enabled: true,
+        dataDirectory: env.pluginsDataDirectory ?? dbLoc('plugins'),
+        configPath: env.pluginsConfig,
+      }
+    : { enabled: false }
+
   return {
     service: serviceCfg,
     db: dbCfg,
@@ -345,6 +353,7 @@ export const envToCfg = (env: ServerEnvironment): ServerConfig => {
     lexicon: lexiconCfg,
     proxy: proxyCfg,
     oauth: oauthCfg,
+    plugins: pluginsCfg,
   }
 }
 
@@ -369,6 +378,7 @@ export type ServerConfig = {
   proxy: ProxyConfig
   oauth: OAuthConfig
   lexicon: LexiconResolverConfig
+  plugins: PluginsConfig
 }
 
 export type ServiceConfig = {
@@ -520,3 +530,11 @@ export type ReportServiceConfig = {
   url: string
   did: string
 }
+
+export type PluginsConfig =
+  | {
+      enabled: true
+      dataDirectory: string
+      configPath?: string
+    }
+  | { enabled: false }
