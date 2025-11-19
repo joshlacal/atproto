@@ -1,6 +1,7 @@
 # PDS OAuth Debug Configuration
 
-This configuration enables extensive OAuth logging for debugging client implementations, with focus on tokens, DPoP, and authentication issues.
+This configuration enables extensive OAuth logging for debugging client
+implementations, with focus on tokens, DPoP, and authentication issues.
 
 ## Quick Start Configuration
 
@@ -64,6 +65,7 @@ PDS_HOSTNAME="your-pds.example.com"
 With this configuration, you'll see detailed logs for:
 
 ### 1. **Token Operations**
+
 - Token creation and issuance
 - Token validation and verification
 - Refresh token usage
@@ -73,6 +75,7 @@ With this configuration, you'll see detailed logs for:
 - Token rotation events
 
 ### 2. **DPoP (Demonstrating Proof-of-Possession)**
+
 - DPoP proof validation
 - `htm` (HTTP method) validation
 - `htu` (HTTP URI) validation
@@ -83,13 +86,17 @@ With this configuration, you'll see detailed logs for:
 - Key binding validation (`cnf.jkt` claim)
 
 ### 3. **Authentication Errors**
-All OAuth errors except these "normal" errors (which are filtered to reduce noise):
+
+All OAuth errors except these "normal" errors (which are filtered to reduce
+noise):
+
 - Invalid identifier or password
 - DPoP nonce required (handled automatically)
 - Handle unavailable
 - 2FA required
 
 ### 4. **OAuth Flow Events**
+
 - Authorization requests
 - Token endpoint requests
 - Client authentication
@@ -97,6 +104,7 @@ All OAuth errors except these "normal" errors (which are filtered to reduce nois
 - HTTP fetch operations for OAuth metadata
 
 ### 5. **Database Operations**
+
 - Token storage and retrieval
 - Session management
 - Account lookups
@@ -106,21 +114,25 @@ All OAuth errors except these "normal" errors (which are filtered to reduce nois
 ### DPoP Errors
 
 **`InvalidDpopProofError`**
+
 - Invalid DPoP proof structure or claims
 - Missing required claims (htm, htu, jti, iat)
 - Invalid signature
 
 **`InvalidDpopKeyBindingError`**
+
 - DPoP key doesn't match the bound key in token
 - `cnf.jkt` claim mismatch
 
 **`UseDpopNonceError`**
+
 - Server requires a nonce (use the nonce from error response)
 - Nonce mismatch or expired
 
 ### Token Errors
 
 **Token Validation Failures**
+
 - Expired tokens
 - Invalid audience
 - Invalid scope
@@ -129,11 +141,13 @@ All OAuth errors except these "normal" errors (which are filtered to reduce nois
 ### Client Errors
 
 **`InvalidRequestError`**
+
 - Malformed requests
 - Missing required parameters
 - Invalid parameter values
 
 **`InvalidClientError`**
+
 - Client authentication failed
 - Unknown client_id
 
@@ -142,6 +156,7 @@ All OAuth errors except these "normal" errors (which are filtered to reduce nois
 ### 1. Check DPoP Proof Structure
 
 Ensure your client sends DPoP proofs with:
+
 ```json
 {
   "htm": "POST",
@@ -155,6 +170,7 @@ Ensure your client sends DPoP proofs with:
 ### 2. Handle DPoP Nonces
 
 When you receive `UseDpopNonceError`:
+
 1. Extract the nonce from the `DPoP-Nonce` response header
 2. Include it in the next DPoP proof as the `nonce` claim
 3. Retry the request
@@ -165,12 +181,13 @@ Access tokens expire quickly. Monitor `exp` claims and refresh proactively.
 
 ### 4. Verify Token Binding
 
-If using DPoP, the access token contains `cnf.jkt` (confirmation key thumbprint).
-All requests with that token MUST use the same DPoP key.
+If using DPoP, the access token contains `cnf.jkt` (confirmation key
+thumbprint). All requests with that token MUST use the same DPoP key.
 
 ### 5. Check Logs for Client ID
 
 Search logs for your `client_id` to trace your specific requests:
+
 ```bash
 grep "your-client-id" /var/log/pds/oauth-debug.log
 ```
@@ -178,19 +195,22 @@ grep "your-client-id" /var/log/pds/oauth-debug.log
 ## Log Subsystems Explained
 
 - **`pds:oauth`** - Core OAuth operations (auth, token, validation)
-- **`pds:fetch`** - HTTP requests made by PDS (metadata fetching, scope resolution)
+- **`pds:fetch`** - HTTP requests made by PDS (metadata fetching, scope
+  resolution)
 - **`pds:db`** - Database operations (token/session storage)
 - **`pds:lexicon-resolver`** - Scope validation and lexicon resolution
 
 ## Production vs Debug
 
 **For debugging:**
+
 ```bash
 LOG_LEVEL=debug
 LOG_SYSTEMS="pds:oauth pds:fetch pds:db pds:lexicon-resolver"
 ```
 
 **For production:**
+
 ```bash
 LOG_LEVEL=info
 LOG_SYSTEMS="pds:oauth"  # Only OAuth, or leave unset for all
@@ -199,11 +219,13 @@ LOG_SYSTEMS="pds:oauth"  # Only OAuth, or leave unset for all
 ## Generating Secrets
 
 Generate a secure DPoP secret:
+
 ```bash
 openssl rand -hex 32
 ```
 
 Generate a JWT secret:
+
 ```bash
 openssl rand -base64 32
 ```
@@ -218,17 +240,20 @@ openssl rand -base64 32
 ## Common Log Patterns
 
 **Successful token issuance:**
+
 ```
 [DEBUG] pds:oauth: Token validation successful
 [INFO] pds:oauth: Access token issued
 ```
 
 **DPoP nonce required:**
+
 ```
 [INFO] pds:oauth: DPoP nonce required
 ```
 
 **DPoP proof validation:**
+
 ```
 [DEBUG] pds:oauth: Validating DPoP proof
 [DEBUG] pds:oauth: DPoP htm validated: POST
@@ -237,6 +262,7 @@ openssl rand -base64 32
 ```
 
 **Scope dereferencing (with entryway):**
+
 ```
 [INFO] pds:oauth: Fetching scope reference
 [DEBUG] pds:fetch: GET https://entryway.example.com/...
@@ -254,22 +280,26 @@ openssl rand -base64 32
 
 If you need even more detailed logging, you can:
 
-1. Add more subsystems to `LOG_SYSTEMS` (see `packages/pds/src/logger.ts` for all available subsystems)
+1. Add more subsystems to `LOG_SYSTEMS` (see `packages/pds/src/logger.ts` for
+   all available subsystems)
 2. Check the source code at the locations mentioned in "Additional Resources"
 3. Add custom logging by modifying the PDS source code
 
 ## Troubleshooting
 
 **No logs appearing?**
+
 - Verify `LOG_ENABLED=true`
 - Check `LOG_DESTINATION` path is writable
 - Ensure logs are going to stdout if no destination is set
 
 **Too many logs?**
+
 - Remove subsystems from `LOG_SYSTEMS` (start with just `pds:oauth`)
 - Increase `LOG_LEVEL` to `info` or `warn`
 
 **Logs missing OAuth details?**
+
 - Ensure `LOG_LEVEL=debug` for maximum detail
 - Check that `pds:oauth` is in `LOG_SYSTEMS`
 - Verify your OAuth requests are actually reaching the PDS
