@@ -26,7 +26,7 @@ LOG_DESTINATION=/var/log/pds/oauth-debug.log
 
 # DPoP secret for nonce generation (32 bytes, 64 hex characters)
 # Generate with: openssl rand -hex 32
-PDS_DPOP_SECRET="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+PDS_DPOP_SECRET="REPLACE_WITH_YOUR_64_CHARACTER_HEX_SECRET_FROM_OPENSSL_COMMAND"
 
 # ============================================================================
 # REQUIRED PDS SETTINGS (if not already configured)
