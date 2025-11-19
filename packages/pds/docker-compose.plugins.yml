@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Main PDS service
+  pds:
+    build:
+      context: ../../
+      dockerfile: services/pds/Dockerfile
+    ports:
+      - "2583:2583"
+    environment:
+      # PDS Configuration
+      PDS_HOSTNAME: ${PDS_HOSTNAME:-localhost}
+      PDS_DATA_DIRECTORY: /app/data
+      PDS_BLOBSTORE_DISK_LOCATION: /app/data/blocks
+      PDS_DID_PLC_URL: https://plc.directory
+      PDS_CRAWLERS: https://bsky.network
+
+      # Plugin Configuration
+      PDS_PLUGINS_ENABLED: "true"
+      PDS_PLUGINS_DATA_DIRECTORY: /app/data/plugins
+      PDS_PLUGINS_CONFIG: /app/plugins-config.json
+
+      # Secrets (replace with your own)
+      PDS_JWT_SECRET: ${PDS_JWT_SECRET:-change-me-in-production}
+      PDS_ADMIN_PASSWORD: ${PDS_ADMIN_PASSWORD:-change-me-in-production}
+      PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX}
+
+      # Plugin-specific environment variables
+      PLUGIN_ENCRYPTION_KEY: ${PLUGIN_ENCRYPTION_KEY:-change-me-to-a-strong-encryption-key}
+    volumes:
+      - pds-data:/app/data
+      - ./plugins-config.json:/app/plugins-config.json:ro
+    networks:
+      - pds-network
+    depends_on:
+      - plugin-sidecar-python
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2583/xrpc/_health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Example Python sidecar plugin
+  plugin-sidecar-python:
+    build:
+      context: .
+      dockerfile: Dockerfile.sidecar-python
+    ports:
+      - "3001:3001"
+    networks:
+      - pds-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Example: You can add more sidecar plugins in different languages
+  # plugin-sidecar-go:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.sidecar-go
+  #   ports:
+  #     - "3002:3002"
+  #   networks:
+  #     - pds-network
+  #   environment:
+  #     SIDECAR_PORT: 3002
+  #   restart: unless-stopped
+
+networks:
+  pds-network:
+    driver: bridge
+
+volumes:
+  pds-data:

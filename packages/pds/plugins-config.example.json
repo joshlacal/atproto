@@ -1,0 +1,37 @@
+[
+  {
+    "id": "encrypted-storage",
+    "source": {
+      "type": "local",
+      "path": "/app/example-plugin-encrypted-storage.js"
+    },
+    "config": {
+      "enabled": true,
+      "config": {
+        "encryptionKey": "${PLUGIN_ENCRYPTION_KEY}"
+      }
+    }
+  },
+  {
+    "id": "sidecar-example",
+    "source": {
+      "type": "local",
+      "path": "/app/example-plugin-sidecar.js"
+    },
+    "config": {
+      "enabled": true,
+      "sidecar": true,
+      "sidecarConfig": {
+        "method": "http",
+        "connection": {
+          "url": "http://plugin-sidecar-python:3001"
+        },
+        "healthCheck": {
+          "enabled": true,
+          "interval": 30000,
+          "timeout": 5000
+        }
+      }
+    }
+  }
+]

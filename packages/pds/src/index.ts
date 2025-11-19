@@ -30,6 +30,10 @@ import { loggerMiddleware } from './logger'
 import { proxyHandler } from './pipethrough'
 import compression from './util/compression'
 import * as wellKnown from './well-known'
+import { PluginManager } from './plugin/manager.js'
+import { PluginRegistration } from './plugin/types.js'
+import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
 
 export { createSecretKeyObject } from './auth-verifier'
 export * from './config'
@@ -42,6 +46,8 @@ export { type CommitDataWithOps, type PreparedWrite } from './repo'
 export * as repoPrepare from './repo/prepare'
 export { scripts } from './scripts'
 export * as sequencer from './sequencer'
+export * as plugin from './plugin'
+export { PluginManager } from './plugin/manager.js'
 
 // Legacy export for backwards compatibility
 export type SkeletonHandler = MethodHandler<
@@ -55,13 +61,19 @@ export class PDS {
   public ctx: AppContext
   public app: express.Application
   public server?: http.Server
+  public pluginManager?: PluginManager
   private terminator?: HttpTerminator
   private dbStatsInterval?: NodeJS.Timeout
   private sequencerStatsInterval?: NodeJS.Timeout
 
-  constructor(opts: { ctx: AppContext; app: express.Application }) {
+  constructor(opts: {
+    ctx: AppContext
+    app: express.Application
+    pluginManager?: PluginManager
+  }) {
     this.ctx = opts.ctx
     this.app = opts.app
+    this.pluginManager = opts.pluginManager
   }
 
   static async create(
@@ -161,17 +173,58 @@ export class PDS {
     app.use(cors({ maxAge: DAY / SECOND }))
     app.use(basicRoutes.createRouter(ctx))
     app.use(wellKnown.createRouter(ctx))
+
+    // Initialize plugin manager if enabled
+    let pluginManager: PluginManager | undefined
+    if (cfg.plugins.enabled) {
+      pluginManager = new PluginManager(
+        ctx,
+        cfg,
+        app,
+        server.xrpc,
+        cfg.plugins.dataDirectory,
+      )
+
+      // Load plugins from config file
+      if (cfg.plugins.configPath && existsSync(cfg.plugins.configPath)) {
+        try {
+          const configContent = await readFile(cfg.plugins.configPath, 'utf-8')
+          const pluginConfigs = JSON.parse(configContent) as PluginRegistration[]
+
+          for (const pluginConfig of pluginConfigs) {
+            await pluginManager.register(pluginConfig)
+          }
+        } catch (error) {
+          ctx.logger?.error('Failed to load plugin configuration', { error })
+          throw error
+        }
+      }
+
+      // Initialize all plugins
+      await pluginManager.initAll()
+
+      // Add plugin middleware
+      app.use(pluginManager.getRequestMiddleware())
+    }
+
     app.use(server.xrpc.router)
     app.use(error.handler)
 
     return new PDS({
       ctx,
       app,
+      pluginManager,
     })
   }
 
   async start(): Promise<http.Server> {
     await this.ctx.sequencer.start()
+
+    // Start plugins before starting the HTTP server
+    if (this.pluginManager) {
+      await this.pluginManager.startAll()
+    }
+
     const server = this.app.listen(this.ctx.cfg.service.port)
     this.server = server
     this.server.keepAliveTimeout = 90000
@@ -181,6 +234,12 @@ export class PDS {
   }
 
   async destroy(): Promise<void> {
+    // Stop and destroy plugins first
+    if (this.pluginManager) {
+      await this.pluginManager.stopAll()
+      await this.pluginManager.destroyAll()
+    }
+
     await this.ctx.sequencer.destroy()
     await this.terminator?.terminate()
     await this.ctx.backgroundQueue.destroy()
