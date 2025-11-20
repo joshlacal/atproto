@@ -19,3 +19,4 @@ test.sqlite
 # PDS data directories
 pds-data/
 pds-blobs/
+oauth-debug.env
