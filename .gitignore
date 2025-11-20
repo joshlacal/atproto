@@ -15,3 +15,8 @@ test.sqlite
 \#*\#
 *~
 *.swp
+
+# PDS data directories
+pds-data/
+pds-blobs/
+oauth-debug.env
