@@ -26,7 +26,7 @@ import { AppContext, AppContextOptions } from './context'
 import * as error from './error'
 import { createServer } from './lexicon'
 import * as AppBskyFeedGetFeedSkeleton from './lexicon/types/app/bsky/feed/getFeedSkeleton'
-import { loggerMiddleware } from './logger'
+import { httpLogger, loggerMiddleware } from './logger'
 import { proxyHandler } from './pipethrough'
 import compression from './util/compression'
 import * as wellKnown from './well-known'
@@ -58,7 +58,7 @@ export class PDS {
   private terminator?: HttpTerminator
   private dbStatsInterval?: NodeJS.Timeout
   private sequencerStatsInterval?: NodeJS.Timeout
-
+  private reservedKeysReaperInterval?: NodeJS.Timeout
   constructor(opts: { ctx: AppContext; app: express.Application }) {
     this.ctx = opts.ctx
     this.app = opts.app
@@ -172,6 +172,15 @@ export class PDS {
 
   async start(): Promise<http.Server> {
     await this.ctx.sequencer.start()
+    this.reservedKeysReaperInterval = setInterval(
+      () => {
+        this.ctx.actorStore.pruneExpiredReservedKeypairs().catch((err) => {
+          httpLogger.error({ err }, 'failed to prune expired reserved keys')
+        })
+      },
+      15 * MINUTE,
+    )
+    this.reservedKeysReaperInterval.unref?.()
     const server = this.app.listen(this.ctx.cfg.service.port)
     this.server = server
     this.server.keepAliveTimeout = 90000
@@ -189,6 +198,7 @@ export class PDS {
     await this.ctx.proxyAgent.destroy()
     clearInterval(this.dbStatsInterval)
     clearInterval(this.sequencerStatsInterval)
+    clearInterval(this.reservedKeysReaperInterval)
   }
 }
 

@@ -9,8 +9,8 @@ import { AtpAgent } from '@atproto/api'
 import { Secp256k1Keypair, randomStr } from '@atproto/crypto'
 import { SeedClient, TestPds, TestPlc, mockResolvers } from '@atproto/dev-env'
 import * as pdsEntryway from '@atproto/pds-entryway'
-import { parseReqNsid } from '@atproto/xrpc-server'
-
+import { createServiceJwt, parseReqNsid } from '@atproto/xrpc-server'
+import { ids } from '../src/lexicon/lexicons'
 describe('entryway', () => {
   let plc: TestPlc
   let pds: TestPds
@@ -25,6 +25,9 @@ describe('entryway', () => {
     const plcRotationKey = await Secp256k1Keypair.create({ exportable: true })
     const entrywayPort = await getPort()
     plc = await TestPlc.create({})
+    const schemaSuffix = Array.from({ length: 6 }, () =>
+      String.fromCharCode(97 + Math.floor(Math.random() * 26)),
+    ).join('')
     pds = await TestPds.create({
       entrywayUrl: `http://localhost:${entrywayPort}`,
       entrywayDid: 'did:example:entryway',
@@ -37,7 +40,7 @@ describe('entryway', () => {
       inviteRequired: false,
     })
     entryway = await createEntryway({
-      dbPostgresSchema: 'entryway',
+      dbPostgresSchema: `entryway_${schemaSuffix}`,
       port: entrywayPort,
       adminPassword: 'admin-pass',
       jwtSigningKeyK256PrivateKeyHex: await getPrivateHex(jwtSigningKey),
@@ -137,9 +140,19 @@ describe('entryway', () => {
   })
 
   it('does not allow bringing own op to account creation.', async () => {
+    const aliceKey = await pds.ctx.actorStore.keypair(alice)
+    const serviceJwt = await createServiceJwt({
+      iss: alice,
+      aud: pds.ctx.cfg.service.did,
+      lxm: ids.ComAtprotoServerReserveSigningKey,
+      keypair: aliceKey,
+    })
     const {
       data: { signingKey },
-    } = await pdsAgent.api.com.atproto.server.reserveSigningKey({})
+    } = await pdsAgent.api.com.atproto.server.reserveSigningKey(
+      { did: alice },
+      { headers: { authorization: `Bearer ${serviceJwt}` } },
+    )
     const rotationKey = await Secp256k1Keypair.create()
     const plcCreate = await plcLib.createOp({
       signingKey,
