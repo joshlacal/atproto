@@ -173,11 +173,48 @@ export class AppContext {
     )
     await didCache.migrateOrThrow()
 
+    /**
+     * A fetch() function that protects against SSRF attacks, large responses &
+     * known bad domains. This function can safely be used to fetch user
+     * provided URLs (unless "disableSsrfProtection" is true, of course).
+     *
+     * @note **DO NOT** wrap `safeFetch` with any logging or other transforms as
+     * this might prevent the use of explicit `redirect: "follow"` init from
+     * working. See {@link safeFetchWrap}.
+     */
+    const safeFetch = safeFetchWrap({
+      allowIpHost: false,
+      allowImplicitRedirect: false,
+      responseMaxSize: cfg.fetch.maxResponseSize,
+      ssrfProtection: !cfg.fetch.disableSsrfProtection,
+
+      // @NOTE Since we are using NodeJS <= 20, unicastFetchWrap would normally
+      // *not* be using a keep-alive agent if it we are providing a fetch
+      // function that is different from `globalThis.fetch`. However, since the
+      // fetch function below is indeed calling `globalThis.fetch` without
+      // altering any argument, we can safely force the use of the keep-alive
+      // agent. This would not be the case if we used "loggedFetch" as that
+      // function does wrap the input & init arguments into a Request object,
+      // which, on NodeJS<=20, results in init.dispatcher *not* being used.
+      dangerouslyForceKeepAliveAgent: true,
+      fetch: function (input, init) {
+        const method =
+          init?.method ?? (input instanceof Request ? input.method : 'GET')
+        const uri = input instanceof Request ? input.url : String(input)
+
+        fetchLogger.info({ method, uri }, 'fetch')
+
+        return globalThis.fetch.call(this, input, init)
+      },
+    })
+
     const idResolver = new IdResolver({
       plcUrl: cfg.identity.plcUrl,
       didCache,
       timeout: cfg.identity.resolverTimeout,
       backupNameservers: cfg.identity.handleBackupNameservers,
+      fetch: safeFetch,
+      allowLocalhost: cfg.service.devMode || cfg.fetch.disableSsrfProtection,
     })
     const plcClient = new plc.Client(cfg.identity.plcUrl)
 
@@ -289,41 +326,6 @@ export class AppContext {
             maxRetries: cfg.proxy.maxRetries,
           })
         : proxyAgentBase
-
-    /**
-     * A fetch() function that protects against SSRF attacks, large responses &
-     * known bad domains. This function can safely be used to fetch user
-     * provided URLs (unless "disableSsrfProtection" is true, of course).
-     *
-     * @note **DO NOT** wrap `safeFetch` with any logging or other transforms as
-     * this might prevent the use of explicit `redirect: "follow"` init from
-     * working. See {@link safeFetchWrap}.
-     */
-    const safeFetch = safeFetchWrap({
-      allowIpHost: false,
-      allowImplicitRedirect: false,
-      responseMaxSize: cfg.fetch.maxResponseSize,
-      ssrfProtection: !cfg.fetch.disableSsrfProtection,
-
-      // @NOTE Since we are using NodeJS <= 20, unicastFetchWrap would normally
-      // *not* be using a keep-alive agent if it we are providing a fetch
-      // function that is different from `globalThis.fetch`. However, since the
-      // fetch function below is indeed calling `globalThis.fetch` without
-      // altering any argument, we can safely force the use of the keep-alive
-      // agent. This would not be the case if we used "loggedFetch" as that
-      // function does wrap the input & init arguments into a Request object,
-      // which, on NodeJS<=20, results in init.dispatcher *not* being used.
-      dangerouslyForceKeepAliveAgent: true,
-      fetch: function (input, init) {
-        const method =
-          init?.method ?? (input instanceof Request ? input.method : 'GET')
-        const uri = input instanceof Request ? input.url : String(input)
-
-        fetchLogger.info({ method, uri }, 'fetch')
-
-        return globalThis.fetch.call(this, input, init)
-      },
-    })
 
     const oauthProvider = cfg.oauth.provider
       ? new OAuthProvider({
