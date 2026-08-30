@@ -1,10 +1,68 @@
+import {
+  AuthRequiredError,
+  InvalidRequestError,
+  MethodAuthVerifier,
+} from '@atproto/xrpc-server'
+import {
+  AdminTokenOutput,
+  UnauthenticatedOutput,
+  UserServiceAuthOutput,
+} from '../../../../auth-output'
+import { AuthType, extractAuthType } from '../../../../auth-verifier'
 import { AppContext } from '../../../../context'
 import { Server } from '../../../../lexicon'
 
+type ReserveKeyAuth =
+  | UserServiceAuthOutput
+  | AdminTokenOutput
+  | UnauthenticatedOutput
+
 export default function (server: Server, ctx: AppContext) {
+  const isEntryway = Boolean(ctx.cfg.entryway)
+
+  const authVerifier: MethodAuthVerifier<ReserveKeyAuth> = async (reqCtx) => {
+    if (isEntryway) {
+      return { credentials: null }
+    }
+    const type = extractAuthType(reqCtx.req)
+    if (type === AuthType.BASIC) {
+      return ctx.authVerifier.adminToken(reqCtx)
+    } else if (type === AuthType.BEARER) {
+      return ctx.authVerifier.userServiceAuth(reqCtx)
+    } else {
+      return ctx.authVerifier.unauthenticated(reqCtx)
+    }
+  }
+
   server.com.atproto.server.reserveSigningKey({
-    handler: async ({ input }) => {
-      const signingKey = await ctx.actorStore.reserveKeypair(input.body.did)
+    auth: authVerifier,
+    handler: async ({ input, auth }) => {
+      const isAdmin = auth.credentials?.type === 'admin_token'
+
+      if (isEntryway || isAdmin) {
+        const signingKey = await ctx.actorStore.reserveKeypair(input.body.did)
+        return {
+          encoding: 'application/json',
+          body: {
+            signingKey,
+          },
+        }
+      }
+
+      const did = input.body.did
+      if (!did) {
+        throw new InvalidRequestError('did is required')
+      }
+      const requester =
+        auth.credentials && 'did' in auth.credentials
+          ? auth.credentials.did
+          : null
+      if (!requester || requester !== did) {
+        throw new AuthRequiredError(
+          `Missing auth to reserve signing key for did: ${did}`,
+        )
+      }
+      const signingKey = await ctx.actorStore.reserveKeypair(did)
       return {
         encoding: 'application/json',
         body: {

@@ -44,10 +44,16 @@ export const envToCfg = (env: ServerEnvironment): ServerConfig => {
     disableWalAutoCheckpoint,
   }
 
+  const rawReservedKeyTtl = env.actorStoreReservedKeyTtlMs ?? 1 * HOUR
+  const reservedKeyTtlMs = Math.min(rawReservedKeyTtl, 24 * HOUR)
+  const maxReservedKeys = env.actorStoreMaxReservedKeys ?? 1_000
+
   const actorStoreCfg: ServerConfig['actorStore'] = {
     directory: env.actorStoreDirectory ?? dbLoc('actors'),
     cacheSize: env.actorStoreCacheSize ?? 100,
     disableWalAutoCheckpoint,
+    maxReservedKeys,
+    reservedKeyTtlMs,
   }
 
   let blobstoreCfg: ServerConfig['blobstore']
@@ -401,6 +407,8 @@ export type ActorStoreConfig = {
   directory: string
   cacheSize: number
   disableWalAutoCheckpoint: boolean
+  maxReservedKeys: number
+  reservedKeyTtlMs: number
 }
 
 export type S3BlobstoreConfig = {

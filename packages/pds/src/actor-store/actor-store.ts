@@ -17,12 +17,18 @@ import { ActorDb, getDb, getMigrator } from './db'
 
 export class ActorStore {
   reservedKeyDir: string
+  maxReservedKeys: number
+  reservedKeyTtlMs: number
+  // ponytail: in-process promise chain serializes quota check-then-write; ceiling is single-process throughput
+  private reservationLock: Promise<void> = Promise.resolve()
 
   constructor(
     public cfg: ActorStoreConfig,
     public resources: ActorStoreResources,
   ) {
     this.reservedKeyDir = path.join(cfg.directory, 'reserved_keys')
+    this.maxReservedKeys = cfg.maxReservedKeys
+    this.reservedKeyTtlMs = cfg.reservedKeyTtlMs
   }
 
   async getLocation(did: string) {
@@ -143,19 +149,46 @@ export class ActorStore {
   }
 
   async reserveKeypair(did?: string): Promise<string> {
+    const prevLock = this.reservationLock
+    let release: () => void
+    this.reservationLock = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await prevLock.catch(() => {})
+    try {
+      return await this.reserveKeypairInner(did)
+    } finally {
+      release!()
+    }
+  }
+
+  private async reserveKeypairInner(did?: string): Promise<string> {
+    await mkdir(this.reservedKeyDir, { recursive: true })
     let keyLoc: string | undefined
     if (did) {
       assertSafePathPart(did)
       keyLoc = path.join(this.reservedKeyDir, did)
-      const maybeKey = await loadKey(keyLoc)
-      if (maybeKey) {
-        return maybeKey.did()
+      const existing = await this.getReservedKeypair(did)
+      if (existing) {
+        return existing.did()
       }
     }
+
+    let files = await this.getReservedKeyFiles()
+    if (files.length >= this.maxReservedKeys) {
+      await this.pruneExpiredReservedKeypairs()
+      files = await this.getReservedKeyFiles()
+      if (files.length >= this.maxReservedKeys) {
+        throw new InvalidRequestError(
+          'Reserved signing key quota exceeded',
+          'QuotaExceeded',
+        )
+      }
+    }
+
     const keypair = await crypto.Secp256k1Keypair.create({ exportable: true })
     const keyDid = keypair.did()
     keyLoc = keyLoc ?? path.join(this.reservedKeyDir, keyDid)
-    await mkdir(this.reservedKeyDir, { recursive: true })
     await fs.writeFile(keyLoc, await keypair.export())
     return keyDid
   }
@@ -163,13 +196,80 @@ export class ActorStore {
   async getReservedKeypair(
     signingKeyOrDid: string,
   ): Promise<ExportableKeypair | undefined> {
-    return loadKey(path.join(this.reservedKeyDir, signingKeyOrDid))
+    assertSafePathPart(signingKeyOrDid)
+    const keyLoc = path.join(this.reservedKeyDir, signingKeyOrDid)
+    try {
+      const stat = await fs.stat(keyLoc)
+      if (stat.mtimeMs < Date.now() - this.reservedKeyTtlMs) {
+        await rmIfExists(keyLoc)
+        return undefined
+      }
+    } catch {
+      return undefined
+    }
+    return loadKey(keyLoc)
   }
 
   async clearReservedKeypair(keyDid: string, did?: string) {
     await rmIfExists(path.join(this.reservedKeyDir, keyDid))
     if (did) {
       await rmIfExists(path.join(this.reservedKeyDir, did))
+    }
+  }
+
+  async pruneExpiredReservedKeypairs(ttlMs?: number): Promise<number> {
+    const ttl = ttlMs ?? this.reservedKeyTtlMs
+    const cutoff = Date.now() - ttl
+    let pruned = 0
+    try {
+      const entries = await fs.readdir(this.reservedKeyDir, {
+        withFileTypes: true,
+      })
+      for (const entry of entries) {
+        if (entry.isFile() && !entry.name.startsWith('.')) {
+          const filePath = path.join(this.reservedKeyDir, entry.name)
+          try {
+            const stat = await fs.stat(filePath)
+            if (stat.mtimeMs < cutoff) {
+              await rmIfExists(filePath)
+              pruned++
+            }
+          } catch {
+            // ignore if deleted concurrently
+          }
+        }
+      }
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        (err as { code: string }).code === 'ENOENT'
+      ) {
+        return 0
+      }
+      throw err
+    }
+    return pruned
+  }
+
+  private async getReservedKeyFiles(): Promise<string[]> {
+    try {
+      const entries = await fs.readdir(this.reservedKeyDir, {
+        withFileTypes: true,
+      })
+      return entries
+        .filter((e) => e.isFile() && !e.name.startsWith('.'))
+        .map((e) => e.name)
+    } catch (err) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        err.code === 'ENOENT'
+      ) {
+        return []
+      }
+      throw err
     }
   }
 

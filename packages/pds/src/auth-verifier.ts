@@ -583,7 +583,7 @@ export function isUserOrAdmin(
   }
 }
 
-enum AuthType {
+export enum AuthType {
   BASIC = 'Basic',
   BEARER = 'Bearer',
   DPOP = 'DPoP',
@@ -627,7 +627,7 @@ const isDefinitelyServiceAuth = (req: IncomingMessage): boolean => {
   return payload['lxm'] != null
 }
 
-const extractAuthType = (req: IncomingMessage): AuthType | null => {
+export const extractAuthType = (req: IncomingMessage): AuthType | null => {
   const [type] = parseAuthorizationHeader(req)
   return type
 }

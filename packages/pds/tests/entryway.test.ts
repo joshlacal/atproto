@@ -9,8 +9,8 @@ import { AtpAgent } from '@atproto/api'
 import { Secp256k1Keypair, randomStr } from '@atproto/crypto'
 import { SeedClient, TestPds, TestPlc, mockResolvers } from '@atproto/dev-env'
 import * as pdsEntryway from '@atproto/pds-entryway'
-import { parseReqNsid } from '@atproto/xrpc-server'
-
+import { createServiceJwt, parseReqNsid } from '@atproto/xrpc-server'
+import { ids } from '../src/lexicon/lexicons'
 describe('entryway', () => {
   let plc: TestPlc
   let pds: TestPds
@@ -64,6 +64,12 @@ describe('entryway', () => {
 
   afterAll(async () => {
     await plc.close()
+    await entryway.ctx.db.db.schema
+      .dropSchema('entryway')
+      .ifExists()
+      .cascade()
+      .execute()
+      .catch(() => {})
     await entryway.destroy()
     await pds.close()
   })
@@ -137,9 +143,19 @@ describe('entryway', () => {
   })
 
   it('does not allow bringing own op to account creation.', async () => {
+    const aliceKey = await pds.ctx.actorStore.keypair(alice)
+    const serviceJwt = await createServiceJwt({
+      iss: alice,
+      aud: pds.ctx.cfg.service.did,
+      lxm: ids.ComAtprotoServerReserveSigningKey,
+      keypair: aliceKey,
+    })
     const {
       data: { signingKey },
-    } = await pdsAgent.api.com.atproto.server.reserveSigningKey({})
+    } = await pdsAgent.api.com.atproto.server.reserveSigningKey(
+      { did: alice },
+      { headers: { authorization: `Bearer ${serviceJwt}` } },
+    )
     const rotationKey = await Secp256k1Keypair.create()
     const plcCreate = await plcLib.createOp({
       signingKey,
@@ -184,6 +200,12 @@ const createEntryway = async (
   const cfg = pdsEntryway.envToCfg(env)
   const secrets = pdsEntryway.envToSecrets(env)
   const server = await pdsEntryway.PDS.create(cfg, secrets)
+  await server.ctx.db.db.schema
+    .dropSchema('entryway')
+    .ifExists()
+    .cascade()
+    .execute()
+    .catch(() => {})
   await server.ctx.db.migrateToLatestOrThrow()
   await server.start()
   // patch entryway access token verification to handle internal service auth pds -> entryway
