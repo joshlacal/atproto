@@ -162,6 +162,42 @@ describe('proxy header', () => {
     await res.arrayBuffer() // drain
     expect(res.status).toBe(501)
   })
+
+  it('rejects unauthenticated request with proxy header before resolving target DID', async () => {
+    const path = `/xrpc/app.bsky.actor.getProfile?actor=${alice}`
+    let didResolveCalled = false
+    const origResolve = network.pds.ctx.idResolver.did.resolve.bind(
+      network.pds.ctx.idResolver.did,
+    )
+    network.pds.ctx.idResolver.did.resolve = async (did: string) => {
+      if (did === 'did:web:attacker.invalid') {
+        didResolveCalled = true
+      }
+      return origResolve(did)
+    }
+    try {
+      // Missing auth header
+      const resNoAuth = await fetch(`${network.pds.url}${path}`, {
+        headers: {
+          'atproto-proxy': 'did:web:attacker.invalid#service_id',
+        },
+      })
+      expect(resNoAuth.status).toBe(401)
+      expect(didResolveCalled).toBe(false)
+
+      // Invalid bearer token
+      const resInvalidAuth = await fetch(`${network.pds.url}${path}`, {
+        headers: {
+          authorization: 'Bearer invalid.token.payload',
+          'atproto-proxy': 'did:web:attacker.invalid#service_id',
+        },
+      })
+      expect(resInvalidAuth.status).toBe(400)
+      expect(didResolveCalled).toBe(false)
+    } finally {
+      network.pds.ctx.idResolver.did.resolve = origResolve
+    }
+  })
 })
 
 type ProxyReq = {

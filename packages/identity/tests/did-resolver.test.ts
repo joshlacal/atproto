@@ -26,7 +26,7 @@ describe('did resolver', () => {
     await plcServer.start()
 
     plcUrl = 'http://localhost:' + plcPort
-    resolver = new DidResolver({ plcUrl })
+    resolver = new DidResolver({ plcUrl, fetch: globalThis.fetch })
 
     close = async () => {
       await webServer.close()
@@ -112,5 +112,55 @@ describe('did resolver', () => {
   it('throws on malformed did:plc', async () => {
     await expect(resolver.ensureResolve(`did:plc:asdf`)).rejects.toThrow()
     await expect(resolver.ensureResolve(`did:plc`)).rejects.toThrow()
+  })
+
+  describe('safe-fetch and security bounds', () => {
+    it('rejects encoded did:web paths and directory traversal attempts', async () => {
+      await expect(
+        resolver.ensureResolve('did:web:example.com%2Fpath'),
+      ).rejects.toThrow('Unsupported did:web paths')
+      await expect(
+        resolver.ensureResolve('did:web:example.com%2fpath'),
+      ).rejects.toThrow('Unsupported did:web paths')
+      await expect(
+        resolver.ensureResolve('did:web:example.com%2F..%2Fetc'),
+      ).rejects.toThrow('Unsupported did:web paths')
+      await expect(
+        resolver.ensureResolve('did:web:example.com%5Cpath'),
+      ).rejects.toThrow('Unsupported did:web paths')
+    })
+
+    it('default DidResolver rejects loopback, private, and link-local addresses', async () => {
+      const defaultResolver = new DidResolver()
+      await expect(
+        defaultResolver.resolve('did:web:127.0.0.1'),
+      ).rejects.toThrow()
+      await expect(
+        defaultResolver.resolve('did:web:10.0.0.1'),
+      ).rejects.toThrow()
+      await expect(
+        defaultResolver.resolve('did:web:169.254.169.254'),
+      ).rejects.toThrow()
+      await expect(
+        defaultResolver.resolve('did:web:%5B%3A%3Affff%3A127.0.0.1%5D'),
+      ).rejects.toThrow()
+    })
+
+    it('rejects oversized DID documents (> 64 KiB)', async () => {
+      const oversizedJson = JSON.stringify({
+        id: 'did:web:example.com',
+        padding: 'A'.repeat(70 * 1024),
+      })
+      const mockFetch: typeof fetch = async () => {
+        return new Response(oversizedJson, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      const resolverWithMock = new DidResolver({ fetch: mockFetch })
+      await expect(
+        resolverWithMock.resolve('did:web:example.com'),
+      ).rejects.toThrow()
+    })
   })
 })

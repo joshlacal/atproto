@@ -102,4 +102,56 @@ describe('car', () => {
     )
     await expect(flush(badCar.blocks)).resolves.toBeUndefined()
   })
+
+  describe('varint and frame bounds', () => {
+    it('rejects continuation-only input exceeding max varint width', async () => {
+      const continuationBytes = new Uint8Array(100).fill(0x80)
+      await expect(readCarStream([continuationBytes])).rejects.toThrow(
+        'could not parse varint: exceeded maximum width',
+      )
+    })
+
+    it('rejects varints wider than 8 bytes', async () => {
+      // 9 bytes
+      const wideVarint = new Uint8Array([
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01,
+      ])
+      await expect(readCarStream([wideVarint])).rejects.toThrow(
+        'could not parse varint: exceeded maximum width',
+      )
+    })
+
+    it('rejects non-canonical varint encodings', async () => {
+      // 0x80 0x00 is non-canonical encoding of 0
+      const nonCanonicalZero = new Uint8Array([0x80, 0x00])
+      await expect(readCarStream([nonCanonicalZero])).rejects.toThrow(
+        'could not parse varint: non-canonical encoding',
+      )
+    })
+
+    it('rejects truncated varint input with unexpected EOF', async () => {
+      const truncatedVarint = new Uint8Array([0x81])
+      await expect(readCarStream([truncatedVarint])).rejects.toThrow(
+        'could not parse varint: unexpected EOF',
+      )
+    })
+
+    it('rejects varints exceeding Number.MAX_SAFE_INTEGER', async () => {
+      // 8 bytes encoding 2^56 - 1 > Number.MAX_SAFE_INTEGER (2^53 - 1)
+      const overflowVarint = new Uint8Array([
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f,
+      ])
+      await expect(readCarStream([overflowVarint])).rejects.toThrow(
+        'could not parse varint: integer overflow',
+      )
+    })
+
+    it('rejects truncated CAR header frame', async () => {
+      // Varint header size = 100, but only 2 header bytes provided
+      const truncatedHeader = new Uint8Array([100, 0x01, 0x02])
+      await expect(readCarStream([truncatedHeader])).rejects.toThrow(
+        'Truncated CAR header',
+      )
+    })
+  })
 })

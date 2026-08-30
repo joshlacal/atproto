@@ -2,19 +2,26 @@ import { DidCache } from '../types'
 import { BaseResolver } from './base-resolver'
 import { timed } from './util'
 
+export const MAX_PLC_DOC_SIZE = 64 * 1024 // 64 KiB
+
 export class DidPlcResolver extends BaseResolver {
+  public fetch?: typeof globalThis.fetch
+
   constructor(
     public plcUrl: string,
-    public timeout: number,
+    public timeout: number = 3000,
     public cache?: DidCache,
+    fetchFn?: typeof globalThis.fetch,
   ) {
     super(cache)
+    this.fetch = fetchFn
   }
 
   async resolveNoCheck(did: string): Promise<unknown> {
     return timed(this.timeout, async (signal) => {
       const url = new URL(`/${encodeURIComponent(did)}`, this.plcUrl)
-      const res = await fetch(url, {
+      const fetchFn = this.fetch ?? globalThis.fetch
+      const res = await fetchFn(url, {
         redirect: 'error',
         headers: { accept: 'application/did+ld+json,application/json' },
         signal,
@@ -27,7 +34,15 @@ export class DidPlcResolver extends BaseResolver {
         throw Object.assign(new Error(res.statusText), { status: res.status })
       }
 
-      return res.json()
+      const buffer = await res.arrayBuffer()
+      if (buffer.byteLength > MAX_PLC_DOC_SIZE) {
+        throw new Error(
+          `Response size exceeds limit (${MAX_PLC_DOC_SIZE} bytes)`,
+        )
+      }
+
+      const text = new TextDecoder().decode(buffer)
+      return JSON.parse(text)
     })
   }
 }

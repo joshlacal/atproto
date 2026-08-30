@@ -8,17 +8,20 @@ export type IdentityResolverOpts = {
   plcUrl?: string
   didCache?: DidCache
   backupNameservers?: string[]
+  fetch?: typeof fetch
 }
 
 export type HandleResolverOpts = {
   timeout?: number
   backupNameservers?: string[]
+  fetch?: typeof fetch
 }
 
 export type DidResolverOpts = {
   timeout?: number
   plcUrl?: string
   didCache?: DidCache
+  fetch?: typeof fetch
 }
 
 export type AtprotoData = {

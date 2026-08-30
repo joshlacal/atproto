@@ -115,6 +115,9 @@ export const readCarReader = async (
       throw new Error('Could not parse CAR header')
     }
     const headerBytes = await reader.read(headerSize)
+    if (headerBytes.byteLength < headerSize) {
+      throw new Error('Truncated CAR header')
+    }
     const header = cbor.decode(headerBytes)
     if (!check.is(header, schema.carHeader)) {
       throw new Error('Could not parse CAR header')
@@ -163,6 +166,9 @@ async function* readCarBlocksIterGenerator(
         break
       }
       const blockBytes = await reader.read(blockSize)
+      if (blockBytes.byteLength < blockSize) {
+        throw new Error('Truncated CAR block')
+      }
       const cid = parseCidFromBytes(blockBytes.subarray(0, 36))
       const bytes = blockBytes.subarray(36)
       yield { cid, bytes }
@@ -188,25 +194,34 @@ export async function* verifyIncomingCarBlocks(
   }
 }
 
+export const MAX_VARINT_BYTES = 8
+
 const readVarint = async (reader: BytesReader): Promise<number | null> => {
-  let done = false
-  const bytes: Uint8Array[] = []
-  while (!done) {
-    const byte = await reader.read(1)
-    if (byte.byteLength === 0) {
-      if (bytes.length > 0) {
-        throw new Error('could not parse varint')
-      } else {
-        return null
+  let res = 0
+  let shift = 0
+  for (let i = 0; i < MAX_VARINT_BYTES; i++) {
+    const byteArr = await reader.read(1)
+    if (byteArr.byteLength === 0) {
+      if (i > 0) {
+        throw new Error('could not parse varint: unexpected EOF')
       }
+      return null
     }
-    bytes.push(byte)
-    if (byte[0] < 128) {
-      done = true
+    const byte = byteArr[0]
+    if (i > 0 && byte === 0x00) {
+      throw new Error('could not parse varint: non-canonical encoding')
     }
+    const val = byte & 0x7f
+    res += val * Math.pow(2, shift)
+    if (res > Number.MAX_SAFE_INTEGER) {
+      throw new Error('could not parse varint: integer overflow')
+    }
+    if ((byte & 0x80) === 0) {
+      return res
+    }
+    shift += 7
   }
-  const concatted = ui8.concat(bytes)
-  return varint.decode(concatted)
+  throw new Error('could not parse varint: exceeded maximum width')
 }
 
 interface BytesReader {

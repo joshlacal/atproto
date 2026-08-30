@@ -55,13 +55,23 @@ export const proxyHandler = (ctx: AppContext): CatchallHandler => {
       if (PROTECTED_METHODS.has(lxm)) {
         throw new InvalidRequestError('Bad token method', 'InvalidToken')
       }
-
-      const { url: origin, did: aud } = await parseProxyInfo(ctx, req, lxm)
+      const proxyToHeader = req.header('atproto-proxy')
+      let aud: string
+      if (proxyToHeader) {
+        aud = parseProxyDid(proxyToHeader)
+      } else {
+        const { serviceInfo } = defaultService(ctx, lxm)
+        if (!serviceInfo) {
+          throw new InvalidRequestError(`No service configured for ${lxm}`)
+        }
+        aud = serviceInfo.did
+      }
 
       const authResult = await performAuth({ req, res, params: { lxm, aud } })
 
       const { credentials } = excludeErrorResult(authResult)
 
+      const { url: origin } = await parseProxyInfo(ctx, req, lxm)
       if (
         credentials.type === 'access' &&
         !isAccessPrivileged(credentials.scope) &&
@@ -199,6 +209,30 @@ export async function pipethrough(
 
 // Request setup/formatting
 // -------------------
+export function parseProxyDid(proxyTo: string): string {
+  const hashIndex = proxyTo.indexOf('#')
+
+  if (hashIndex === 0) {
+    throw new InvalidRequestError('no did specified in proxy header')
+  }
+
+  if (hashIndex === -1 || hashIndex === proxyTo.length - 1) {
+    throw new InvalidRequestError('no service id specified in proxy header')
+  }
+
+  // More than one hash
+  if (proxyTo.indexOf('#', hashIndex + 1) !== -1) {
+    throw new InvalidRequestError('invalid proxy header format')
+  }
+
+  // Basic validation
+  if (proxyTo.includes(' ')) {
+    throw new InvalidRequestError('proxy header cannot contain spaces')
+  }
+
+  return proxyTo.slice(0, hashIndex)
+}
+
 
 export function computeProxyTo(
   ctx: AppContext,

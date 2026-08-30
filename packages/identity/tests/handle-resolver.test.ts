@@ -62,4 +62,40 @@ describe('handle resolver', () => {
     const did = await resolver.resolveDns('multi.test')
     expect(did).toBeUndefined()
   })
+
+  describe('DNS-first and safe-fetch fallback', () => {
+    it('resolves DNS first without initiating speculative HTTP fallback', async () => {
+      let httpCalled = false
+      const mockFetch: typeof fetch = async () => {
+        httpCalled = true
+        return new Response('did:example:httpDid', { status: 200 })
+      }
+      const testResolver = new HandleResolver({ fetch: mockFetch })
+      const did = await testResolver.resolve('simple.test')
+      expect(did).toBe('did:example:simpleDid')
+      expect(httpCalled).toBe(false)
+    })
+
+    it('falls back to HTTP only when DNS resolution fails', async () => {
+      let httpCalled = false
+      const mockFetch: typeof fetch = async () => {
+        httpCalled = true
+        return new Response('did:example:httpFallbackDid', { status: 200 })
+      }
+      const testResolver = new HandleResolver({ fetch: mockFetch })
+      const did = await testResolver.resolve('bad.test')
+      expect(httpCalled).toBe(true)
+      expect(did).toBe('did:example:httpFallbackDid')
+    })
+
+    it('rejects oversized handle HTTP fallback bodies (> 10 KiB)', async () => {
+      const oversizedBody = 'did:example:tooLong' + 'A'.repeat(15 * 1024)
+      const mockFetch: typeof fetch = async () => {
+        return new Response(oversizedBody, { status: 200 })
+      }
+      const testResolver = new HandleResolver({ fetch: mockFetch })
+      const did = await testResolver.resolve('bad.test')
+      expect(did).toBeUndefined()
+    })
+  })
 })
