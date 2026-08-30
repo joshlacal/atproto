@@ -9,6 +9,7 @@ import {
   createDidAndKey,
 } from '@atproto/dev-env'
 import { ids } from '../src/lexicon/lexicons'
+import { parseJwtPayload } from '../src/auth-verifier'
 
 describe('proxied authorization matrix (F16, F26)', () => {
   let network: TestNetwork
@@ -139,21 +140,21 @@ describe('proxied authorization matrix (F16, F26)', () => {
   describe('private proxy: tools.ozone.hosting.getAccountHistory (F26)', () => {
     const lxm = ids.ToolsOzoneHostingGetAccountHistory
 
-    it('rejects anonymous caller', async () => {
+    it('rejects anonymous caller with zero downstream calls', async () => {
       const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
       try {
         await expect(
           ozoneClient().tools.ozone.hosting.getAccountHistory({
             did: sc.dids.alice,
           }),
-        ).rejects.toThrow(/Authentication Required|missing jwt/i)
+        ).rejects.toThrow(/^missing jwt$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
       }
     })
 
-    it('rejects disabled member', async () => {
+    it('rejects disabled member with zero downstream calls', async () => {
       const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
       try {
         const headers = await createAuthHeader(disabledUser, lxm)
@@ -162,14 +163,14 @@ describe('proxied authorization matrix (F16, F26)', () => {
             { did: sc.dids.alice },
             { headers },
           ),
-        ).rejects.toThrow(/member is disabled/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
       }
     })
 
-    it('rejects verifier role (F26)', async () => {
+    it('rejects verifier role with zero downstream calls (F26)', async () => {
       const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
       try {
         const headers = await createAuthHeader(verifierUser, lxm)
@@ -178,14 +179,14 @@ describe('proxied authorization matrix (F16, F26)', () => {
             { did: sc.dids.alice },
             { headers },
           ),
-        ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
       }
     })
 
-    it('rejects triage role (F26)', async () => {
+    it('rejects triage role with zero downstream calls (F26)', async () => {
       const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
       try {
         const headers = await createAuthHeader(triageUser, lxm)
@@ -194,7 +195,7 @@ describe('proxied authorization matrix (F16, F26)', () => {
             { did: sc.dids.alice },
             { headers },
           ),
-        ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
@@ -232,22 +233,64 @@ describe('proxied authorization matrix (F16, F26)', () => {
   describe('private proxy: com.atproto.admin.searchAccounts (F26)', () => {
     const lxm = ids.ComAtprotoAdminSearchAccounts
 
-    it('rejects verifier and triage roles', async () => {
-      const verifierHeaders = await createAuthHeader(verifierUser, lxm)
-      await expect(
-        ozoneClient().com.atproto.admin.searchAccounts(
-          {},
-          { headers: verifierHeaders },
-        ),
-      ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+    it('rejects anonymous caller with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        await expect(
+          ozoneClient().com.atproto.admin.searchAccounts({}),
+        ).rejects.toThrow(/^missing jwt$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
 
-      const triageHeaders = await createAuthHeader(triageUser, lxm)
-      await expect(
-        ozoneClient().com.atproto.admin.searchAccounts(
-          {},
-          { headers: triageHeaders },
-        ),
-      ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+    it('rejects disabled member with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(disabledUser, lxm)
+        await expect(
+          ozoneClient().com.atproto.admin.searchAccounts(
+            {},
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects verifier role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const verifierHeaders = await createAuthHeader(verifierUser, lxm)
+        await expect(
+          ozoneClient().com.atproto.admin.searchAccounts(
+            {},
+            { headers: verifierHeaders },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects triage role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const triageHeaders = await createAuthHeader(triageUser, lxm)
+        await expect(
+          ozoneClient().com.atproto.admin.searchAccounts(
+            {},
+            { headers: triageHeaders },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
     })
 
     it('allows moderator role', async () => {
@@ -258,53 +301,302 @@ describe('proxied authorization matrix (F16, F26)', () => {
       )
       expect(res.success).toBe(true)
     })
+
+    it('allows admin JWT', async () => {
+      const headers = await createAuthHeader(adminUser, lxm)
+      const res = await ozoneClient().com.atproto.admin.searchAccounts(
+        {},
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+
+    it('allows Basic admin', async () => {
+      const headers = basicAdminAuthHeader()
+      const res = await ozoneClient().com.atproto.admin.searchAccounts(
+        {},
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
   })
 
-  describe('private proxy: tools.ozone.signature.* (F26)', () => {
-    it('rejects verifier and triage for findRelatedAccounts, searchAccounts, findCorrelation', async () => {
-      const verifierHeaders1 = await createAuthHeader(
-        verifierUser,
-        ids.ToolsOzoneSignatureFindRelatedAccounts,
-      )
-      await expect(
-        ozoneClient().tools.ozone.signature.findRelatedAccounts(
-          { did: sc.dids.alice },
-          { headers: verifierHeaders1 },
-        ),
-      ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+  describe('private proxy: tools.ozone.signature.findRelatedAccounts (F26)', () => {
+    const lxm = ids.ToolsOzoneSignatureFindRelatedAccounts
 
-      const triageHeaders1 = await createAuthHeader(
-        triageUser,
-        ids.ToolsOzoneSignatureFindRelatedAccounts,
-      )
-      await expect(
-        ozoneClient().tools.ozone.signature.findRelatedAccounts(
-          { did: sc.dids.alice },
-          { headers: triageHeaders1 },
-        ),
-      ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+    it('rejects anonymous caller with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        await expect(
+          ozoneClient().tools.ozone.signature.findRelatedAccounts({
+            did: sc.dids.alice,
+          }),
+        ).rejects.toThrow(/^missing jwt$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
 
-      const verifierHeaders2 = await createAuthHeader(
-        verifierUser,
-        ids.ToolsOzoneSignatureSearchAccounts,
-      )
-      await expect(
-        ozoneClient().tools.ozone.signature.searchAccounts(
-          { values: ['test'] },
-          { headers: verifierHeaders2 },
-        ),
-      ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+    it('rejects disabled member with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(disabledUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.findRelatedAccounts(
+            { did: sc.dids.alice },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
 
-      const verifierHeaders3 = await createAuthHeader(
-        verifierUser,
-        ids.ToolsOzoneSignatureFindCorrelation,
+    it('rejects verifier role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(verifierUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.findRelatedAccounts(
+            { did: sc.dids.alice },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects triage role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(triageUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.findRelatedAccounts(
+            { did: sc.dids.alice },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('allows moderator role', async () => {
+      const headers = await createAuthHeader(modUser, lxm)
+      const res = await ozoneClient().tools.ozone.signature.findRelatedAccounts(
+        { did: sc.dids.alice },
+        { headers },
       )
-      await expect(
-        ozoneClient().tools.ozone.signature.findCorrelation(
-          { dids: [sc.dids.alice, sc.dids.bob] },
-          { headers: verifierHeaders3 },
-        ),
-      ).rejects.toThrow(/not a moderator account|Authentication Required/i)
+      expect(res.success).toBe(true)
+    })
+
+    it('allows admin JWT', async () => {
+      const headers = await createAuthHeader(adminUser, lxm)
+      const res = await ozoneClient().tools.ozone.signature.findRelatedAccounts(
+        { did: sc.dids.alice },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+
+    it('allows Basic admin', async () => {
+      const headers = basicAdminAuthHeader()
+      const res = await ozoneClient().tools.ozone.signature.findRelatedAccounts(
+        { did: sc.dids.alice },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+  })
+
+  describe('private proxy: tools.ozone.signature.searchAccounts (F26)', () => {
+    const lxm = ids.ToolsOzoneSignatureSearchAccounts
+
+    it('rejects anonymous caller with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        await expect(
+          ozoneClient().tools.ozone.signature.searchAccounts({
+            values: ['test'],
+          }),
+        ).rejects.toThrow(/^missing jwt$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects disabled member with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(disabledUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.searchAccounts(
+            { values: ['test'] },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects verifier role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(verifierUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.searchAccounts(
+            { values: ['test'] },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects triage role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(triageUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.searchAccounts(
+            { values: ['test'] },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('allows moderator role', async () => {
+      const headers = await createAuthHeader(modUser, lxm)
+      const res = await ozoneClient().tools.ozone.signature.searchAccounts(
+        { values: ['test'] },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+
+    it('allows admin JWT', async () => {
+      const headers = await createAuthHeader(adminUser, lxm)
+      const res = await ozoneClient().tools.ozone.signature.searchAccounts(
+        { values: ['test'] },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+
+    it('allows Basic admin', async () => {
+      const headers = basicAdminAuthHeader()
+      const res = await ozoneClient().tools.ozone.signature.searchAccounts(
+        { values: ['test'] },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+  })
+
+  describe('private proxy: tools.ozone.signature.findCorrelation (F26)', () => {
+    const lxm = ids.ToolsOzoneSignatureFindCorrelation
+
+    it('rejects anonymous caller with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        await expect(
+          ozoneClient().tools.ozone.signature.findCorrelation({
+            dids: [sc.dids.alice, sc.dids.bob],
+          }),
+        ).rejects.toThrow(/^missing jwt$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects disabled member with zero downstream calls', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(disabledUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.findCorrelation(
+            { dids: [sc.dids.alice, sc.dids.bob] },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects verifier role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(verifierUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.findCorrelation(
+            { dids: [sc.dids.alice, sc.dids.bob] },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('rejects triage role with zero downstream calls (F26)', async () => {
+      const pdsAuthSpy = jest.spyOn(network.ozone.ctx, 'pdsAuth')
+      try {
+        const headers = await createAuthHeader(triageUser, lxm)
+        await expect(
+          ozoneClient().tools.ozone.signature.findCorrelation(
+            { dids: [sc.dids.alice, sc.dids.bob] },
+            { headers },
+          ),
+        ).rejects.toThrow(/^Authentication Required$/)
+        expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        pdsAuthSpy.mockRestore()
+      }
+    })
+
+    it('allows moderator role', async () => {
+      const headers = await createAuthHeader(modUser, lxm)
+      const res = await ozoneClient().tools.ozone.signature.findCorrelation(
+        { dids: [sc.dids.alice, sc.dids.bob] },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+
+    it('allows admin JWT', async () => {
+      const headers = await createAuthHeader(adminUser, lxm)
+      const res = await ozoneClient().tools.ozone.signature.findCorrelation(
+        { dids: [sc.dids.alice, sc.dids.bob] },
+        { headers },
+      )
+      expect(res.success).toBe(true)
+    })
+
+    it('allows Basic admin', async () => {
+      const headers = basicAdminAuthHeader()
+      const res = await ozoneClient().tools.ozone.signature.findCorrelation(
+        { dids: [sc.dids.alice, sc.dids.bob] },
+        { headers },
+      )
+      expect(res.success).toBe(true)
     })
   })
 
@@ -334,7 +626,7 @@ describe('proxied authorization matrix (F16, F26)', () => {
     it('rejects anonymous and disabled callers', async () => {
       await expect(
         ozoneClient().app.bsky.actor.getProfile({ actor: sc.dids.alice }),
-      ).rejects.toThrow(/Authentication Required|missing jwt/i)
+      ).rejects.toThrow(/^missing jwt$/)
 
       const disabledHeaders = await createAuthHeader(
         disabledUser,
@@ -345,7 +637,7 @@ describe('proxied authorization matrix (F16, F26)', () => {
           { actor: sc.dids.alice },
           { headers: disabledHeaders },
         ),
-      ).rejects.toThrow(/member is disabled/i)
+      ).rejects.toThrow(/^Authentication Required$/)
     })
   })
 
@@ -372,7 +664,7 @@ describe('proxied authorization matrix (F16, F26)', () => {
             { did: sc.dids.alice },
             { headers },
           ),
-        ).rejects.toThrow(/not a team member|not a moderator account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(resolveSpy).toHaveBeenCalledTimes(0)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
@@ -397,7 +689,7 @@ describe('proxied authorization matrix (F16, F26)', () => {
             { did: sc.dids.alice },
             { headers },
           ),
-        ).rejects.toThrow(/member is disabled/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(resolveSpy).toHaveBeenCalledTimes(0)
       } finally {
         resolveSpy.mockRestore()
@@ -420,11 +712,113 @@ describe('proxied authorization matrix (F16, F26)', () => {
             { did: sc.dids.alice },
             { headers },
           ),
-        ).rejects.toThrow(/not a moderator account/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(resolveSpy).toHaveBeenCalledTimes(0)
       } finally {
         resolveSpy.mockRestore()
       }
+    })
+
+    it('asserts byte-identical unauthenticated responses across unknown, disabled, verifier, and triage DIDs without leaking membership or role (O1-I1)', async () => {
+      const fakeKeypair = await Secp256k1Keypair.create()
+      const unknownUser: DidAndKey = {
+        did: 'did:web:unknown-attacker-target.example.com',
+        key: fakeKeypair,
+      }
+      const lxm = ids.ToolsOzoneHostingGetAccountHistory
+
+      // Forged tokens with invalid signatures for each candidate DID
+      const unknownHeaders = await createAuthHeader(unknownUser, lxm)
+      const disabledHeaders = await createAuthHeader(
+        { did: disabledUser.did, key: fakeKeypair },
+        lxm,
+      )
+      const verifierHeaders = await createAuthHeader(
+        { did: verifierUser.did, key: fakeKeypair },
+        lxm,
+      )
+      const triageHeaders = await createAuthHeader(
+        { did: triageUser.did, key: fakeKeypair },
+        lxm,
+      )
+
+      const resolveSpy = jest.spyOn(
+        network.ozone.ctx.idResolver.did,
+        'resolveAtprotoData',
+      )
+
+      try {
+        const getErr = async (headers: { authorization: string }) => {
+          try {
+            await ozoneClient().tools.ozone.hosting.getAccountHistory(
+              { did: sc.dids.alice },
+              { headers },
+            )
+            throw new Error('should have failed')
+          } catch (err: unknown) {
+            return err as { status?: number; error?: string; message?: string }
+          }
+        }
+
+        const [errUnknown, errDisabled, errVerifier, errTriage] = await Promise.all([
+          getErr(unknownHeaders),
+          getErr(disabledHeaders),
+          getErr(verifierHeaders),
+          getErr(triageHeaders),
+        ])
+
+        // All 4 unauthenticated responses must be byte-identical
+        expect(errUnknown.status).toBe(401)
+        expect(errUnknown.error).toBe('AuthenticationRequired')
+        expect(errUnknown.message).toBe('Authentication Required')
+
+        expect(errDisabled.status).toBe(errUnknown.status)
+        expect(errDisabled.error).toBe(errUnknown.error)
+        expect(errDisabled.message).toBe(errUnknown.message)
+
+        expect(errVerifier.status).toBe(errUnknown.status)
+        expect(errVerifier.error).toBe(errUnknown.error)
+        expect(errVerifier.message).toBe(errUnknown.message)
+
+        expect(errTriage.status).toBe(errUnknown.status)
+        expect(errTriage.error).toBe(errUnknown.error)
+        expect(errTriage.message).toBe(errUnknown.message)
+
+        // Zero network DID resolution calls for unknown non-member, disabled, and insufficient roles
+        expect(resolveSpy).toHaveBeenCalledTimes(0)
+      } finally {
+        resolveSpy.mockRestore()
+      }
+    })
+  })
+
+  describe('JWT payload parsing robust validation (O1-M1)', () => {
+    it('rejects JWT whose payload decodes to null with 401 BadJwt instead of 500', () => {
+      // header.payload.sig where payload is base64url('null') => 'bnVsbA'
+      const nullPayloadJwt = 'eyJhbGciOiJFUzI1NksifQ.bnVsbA.fakesig'
+      expect(() => parseJwtPayload(nullPayloadJwt)).toThrow('poorly formatted jwt')
+    })
+
+    it('rejects JWT whose payload has missing or non-string iss with 401 BadJwt', () => {
+      const noIssPayload = Buffer.from(JSON.stringify({ aud: 'did:web:service' })).toString('base64url')
+      const noIssJwt = `eyJhbGciOiJFUzI1NksifQ.${noIssPayload}.fakesig`
+      expect(() => parseJwtPayload(noIssJwt)).toThrow('poorly formatted jwt')
+
+      const numberIssPayload = Buffer.from(JSON.stringify({ iss: 12345 })).toString('base64url')
+      const numberIssJwt = `eyJhbGciOiJFUzI1NksifQ.${numberIssPayload}.fakesig`
+      expect(() => parseJwtPayload(numberIssJwt)).toThrow('poorly formatted jwt')
+    })
+
+    it('rejects JWT with invalid number of parts with 401 BadJwt', () => {
+      expect(() => parseJwtPayload('not-a-jwt')).toThrow('poorly formatted jwt')
+      expect(() => parseJwtPayload('one.two')).toThrow('poorly formatted jwt')
+      expect(() => parseJwtPayload('one.two.three.four')).toThrow('poorly formatted jwt')
+    })
+
+    it('rejects JWT with invalid JSON payload with 401 BadJwt', () => {
+      const badJsonPayload = Buffer.from('not json{').toString('base64url')
+      const badJsonJwt = `eyJhbGciOiJFUzI1NksifQ.${badJsonPayload}.fakesig`
+      expect(() => parseJwtPayload(badJsonJwt)).toThrow('poorly formatted jwt')
     })
   })
 })

@@ -7,7 +7,7 @@ import { getReposForVerifications } from '../../verification/util'
 
 export default function (server: Server, ctx: AppContext) {
   server.tools.ozone.verification.grantVerifications({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.verifierOrAdminToken,
     handler: async ({ input, auth, req }) => {
       if (!ctx.cfg.verifier) {
         throw new InvalidRequestError('Verifier not configured')

@@ -4,7 +4,7 @@ import { Server } from '../../lexicon'
 
 export default function (server: Server, ctx: AppContext) {
   server.tools.ozone.verification.revokeVerifications({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.verifierOrAdminToken,
     handler: async ({ input, auth }) => {
       if (!ctx.cfg.verifier) {
         throw new InvalidRequestError('Verifier not configured')

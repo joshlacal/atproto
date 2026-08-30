@@ -128,9 +128,7 @@ describe('verification', () => {
             },
           ],
         })
-      await expect(attemptAsAdmin).rejects.toThrow(
-        'Must be an admin or verifier to grant verifications',
-      )
+      await expect(attemptAsAdmin).rejects.toThrow(/^Authentication Required$/)
     })
 
     it('fails if the handle is invalid', async () => {

@@ -125,11 +125,6 @@ export class AuthVerifier {
     }
     return this.fullModerator(reqCtx)
   }
-
-  moderator = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
-    return this.fullModerator(reqCtx)
-  }
-
   modOrAdminToken = async (
     reqCtx: ReqCtx,
   ): Promise<ModeratorOutput | AdminTokenOutput> => {
@@ -199,23 +194,15 @@ export class AuthVerifier {
     }
     const payload = parseJwtPayload(jwtStr)
     const iss = payload.iss
-    if (!iss || typeof iss !== 'string') {
-      throw new AuthRequiredError('missing jwt issuer', 'BadJwt')
-    }
 
     const member = await this.teamService.getMember(iss)
-    if (!member) {
-      throw new AuthRequiredError('not a team member', 'NotMember')
-    }
-    if (member.disabled) {
-      throw new AuthRequiredError('member is disabled', 'MemberDisabled')
+    if (!member || member.disabled) {
+      throw new AuthRequiredError()
     }
 
     const role = this.teamService.getMemberRole(member)
     if (rolePredicate && !rolePredicate(role)) {
-      throw new AuthRequiredError(
-        roleErrorMessage ?? 'insufficient role',
-      )
+      throw new AuthRequiredError()
     }
 
     const nsid = parseReqNsid(reqCtx.req)
@@ -236,6 +223,16 @@ export class AuthVerifier {
       nsid,
       getSigningKey,
     )
+
+    if (member.disabled) {
+      throw new AuthRequiredError('member is disabled', 'MemberDisabled')
+    }
+
+    if (rolePredicate && !rolePredicate(role)) {
+      throw new AuthRequiredError(
+        roleErrorMessage ?? 'insufficient role',
+      )
+    }
 
     return {
       iss: verified.iss,
@@ -251,13 +248,10 @@ export class AuthVerifier {
     }
     const payload = parseJwtPayload(jwtStr)
     const iss = payload.iss
-    if (!iss || typeof iss !== 'string') {
-      throw new AuthRequiredError('missing jwt issuer', 'BadJwt')
-    }
 
     const member = await this.teamService.getMember(iss)
     if (member?.disabled) {
-      throw new AuthRequiredError('member is disabled', 'MemberDisabled')
+      throw new AuthRequiredError()
     }
 
     const nsid = parseReqNsid(reqCtx.req)
@@ -278,6 +272,10 @@ export class AuthVerifier {
       nsid,
       getSigningKey,
     )
+
+    if (member?.disabled) {
+      throw new AuthRequiredError('member is disabled', 'MemberDisabled')
+    }
 
     const { isAdmin, isModerator, isTriage, isVerifier } =
       this.teamService.getMemberRole(member)
@@ -380,15 +378,25 @@ export const parseBasicAuth = (
 
 export const parseJwtPayload = (
   jwtStr: string,
-): { iss?: string; aud?: string; exp?: number; lxm?: string } => {
+): { iss: string; aud?: string; exp?: number; lxm?: string } => {
   const parts = jwtStr.split('.')
   if (parts.length !== 3) {
     throw new AuthRequiredError('poorly formatted jwt', 'BadJwt')
   }
+  let payload: unknown
   try {
     const json = ui8.toString(ui8.fromString(parts[1], 'base64url'), 'utf8')
-    return JSON.parse(json)
+    payload = JSON.parse(json)
   } catch (err) {
     throw new AuthRequiredError('poorly formatted jwt', 'BadJwt')
   }
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    !('iss' in payload) ||
+    typeof payload.iss !== 'string'
+  ) {
+    throw new AuthRequiredError('poorly formatted jwt', 'BadJwt')
+  }
+  return payload as { iss: string; aud?: string; exp?: number; lxm?: string }
 }

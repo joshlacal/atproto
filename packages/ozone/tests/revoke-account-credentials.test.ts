@@ -139,7 +139,7 @@ describe('revoke account credentials event and proxy authorization', () => {
           ozoneClient().com.atproto.temp.revokeAccountCredentials({
             account: sc.dids.bob,
           }),
-        ).rejects.toThrow(/Authentication Required|missing jwt/i)
+        ).rejects.toThrow(/^missing jwt$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
@@ -155,7 +155,7 @@ describe('revoke account credentials event and proxy authorization', () => {
             { account: sc.dids.bob },
             { headers },
           ),
-        ).rejects.toThrow(/member is disabled/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
@@ -171,7 +171,7 @@ describe('revoke account credentials event and proxy authorization', () => {
             { account: sc.dids.bob },
             { headers },
           ),
-        ).rejects.toThrow(/not an admin account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
@@ -187,7 +187,7 @@ describe('revoke account credentials event and proxy authorization', () => {
             { account: sc.dids.bob },
             { headers },
           ),
-        ).rejects.toThrow(/not an admin account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
@@ -203,7 +203,7 @@ describe('revoke account credentials event and proxy authorization', () => {
             { account: sc.dids.bob },
             { headers },
           ),
-        ).rejects.toThrow(/not an admin account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
         pdsAuthSpy.mockRestore()
@@ -247,7 +247,7 @@ describe('revoke account credentials event and proxy authorization', () => {
             { account: sc.dids.bob },
             { headers },
           ),
-        ).rejects.toThrow(/not a team member|not an admin account|Authentication Required/i)
+        ).rejects.toThrow(/^Authentication Required$/)
         expect(resolveSpy).toHaveBeenCalledTimes(0)
         expect(pdsAuthSpy).toHaveBeenCalledTimes(0)
       } finally {
