@@ -144,13 +144,11 @@ export async function validateGlobalHost(
     if (err instanceof ForbiddenHostError) {
       throw err
     }
-    const code = (err as { code?: string })?.code
-    if (
-      code === 'ENOTFOUND' ||
-      code === 'EAI_AGAIN' ||
-      code === 'ENODATA' ||
-      code === 'ESERVFAIL'
-    ) {
+    const code =
+      err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+        ? err.code
+        : undefined
+    if (code === 'ENOTFOUND' || code === 'ENODATA') {
       return
     }
     throw err

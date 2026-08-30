@@ -214,6 +214,31 @@ describe('did resolver', () => {
       }
       expect(fetchCalled).toBe(false)
     })
+    it('fails closed on attacker-inducible resolver errors (EAI_AGAIN) with zero outbound fetch calls', async () => {
+      let fetchCalled = false
+      const countingFetch: typeof fetch = async () => {
+        fetchCalled = true
+        return new Response('{}', { status: 200 })
+      }
+      const testResolver = new DidResolver({ fetch: countingFetch })
+
+      const eaiAgainErr = Object.assign(new Error('getaddrinfo EAI_AGAIN'), {
+        code: 'EAI_AGAIN',
+      })
+      const lookupSpy = jest
+        .spyOn(dns, 'lookup')
+        .mockRejectedValueOnce(eaiAgainErr)
+
+      try {
+        await expect(
+          testResolver.resolve('did:web:unverifiable.example.com'),
+        ).rejects.toThrow('getaddrinfo EAI_AGAIN')
+      } finally {
+        lookupSpy.mockRestore()
+      }
+      expect(fetchCalled).toBe(false)
+    })
+
 
     it('rejects HTTP redirects (redirect: error) and does not follow location', async () => {
       let callCount = 0
