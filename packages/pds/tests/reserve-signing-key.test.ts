@@ -12,6 +12,8 @@ import {
 import { DidDocument } from '@atproto/identity'
 import { createServiceJwt } from '@atproto/xrpc-server'
 import { AppContext } from '../src'
+import { ActorStore } from '../src/actor-store/actor-store'
+import { envToCfg } from '../src/config/config'
 import { ids } from '../src/lexicon/lexicons'
 
 describe('reserve signing key admission, quota, and expiry', () => {
@@ -245,7 +247,7 @@ describe('reserve signing key admission, quota, and expiry', () => {
       }
     })
 
-    it('prunes expired mtime entries and recovers quota', async () => {
+    it('prunes expired mtime entries and recovers quota on saturation', async () => {
       const origMax = ctx.actorStore.maxReservedKeys
       const origTtl = ctx.actorStore.reservedKeyTtlMs
       try {
@@ -259,31 +261,83 @@ describe('reserve signing key admission, quota, and expiry', () => {
           lxm: ids.ComAtprotoServerReserveSigningKey,
           keypair: aliceKey,
         })
+        const bobKey = await ctx.actorStore.keypair(bob)
+        const bobJwt = await createServiceJwt({
+          iss: bob,
+          aud: pdsDid,
+          lxm: ids.ComAtprotoServerReserveSigningKey,
+          keypair: bobKey,
+        })
 
+        // Fill quota: 2/2
         await agent.api.com.atproto.server.reserveSigningKey(
           { did: alice },
           { headers: { authorization: `Bearer ${aliceJwt}` } },
         )
+        await agent.api.com.atproto.server.reserveSigningKey(
+          { did: bob },
+          { headers: { authorization: `Bearer ${bobJwt}` } },
+        )
 
-        // Age alice's reservation file mtime by setting utimes in the past
-        const aliceFile = path.join(ctx.actorStore.reservedKeyDir, alice)
+        let files = await getReservedFiles()
+        expect(files.length).toBe(2)
+
+        // Age both reservation files past TTL
         const pastTime = (Date.now() - 10000) / 1000
-        await fs.utimes(aliceFile, pastTime, pastTime)
+        for (const file of files) {
+          await fs.utimes(
+            path.join(ctx.actorStore.reservedKeyDir, file),
+            pastTime,
+            pastTime,
+          )
+        }
 
-        // Prune expired keys
-        const pruned = await ctx.actorStore.pruneExpiredReservedKeypairs()
-        expect(pruned).toBeGreaterThanOrEqual(1)
+        // Reserving for carol hits capacity, triggers prune-on-quota, clears expired alice/bob, and admits carol
+        const carolKey = await ctx.actorStore.keypair(carol)
+        const carolJwt = await createServiceJwt({
+          iss: carol,
+          aud: pdsDid,
+          lxm: ids.ComAtprotoServerReserveSigningKey,
+          keypair: carolKey,
+        })
+        const carolRes = await agent.api.com.atproto.server.reserveSigningKey(
+          { did: carol },
+          { headers: { authorization: `Bearer ${carolJwt}` } },
+        )
+        expect(carolRes.data.signingKey.startsWith('did:key:')).toBe(true)
 
-        const files = await getReservedFiles()
+        files = await getReservedFiles()
+        expect(files).toContain(carol)
         expect(files).not.toContain(alice)
+        expect(files).not.toContain(bob)
       } finally {
         ctx.actorStore.maxReservedKeys = origMax
         ctx.actorStore.reservedKeyTtlMs = origTtl
       }
     })
 
-    it('caps TTL at 24 hours in actorStore and config', async () => {
-      expect(ctx.actorStore.reservedKeyTtlMs).toBeLessThanOrEqual(24 * HOUR)
+    it('caps TTL at 24 hours in envToCfg and actorStore', async () => {
+      // Test exceeding 24 hours (72 hours) - must be clamped to 24 hours
+      const cfg72 = envToCfg({
+        serviceHandleDomains: ['.test'],
+        blobstoreDiskLocation: '/tmp/blobstore',
+        actorStoreReservedKeyTtlMs: 72 * HOUR,
+      })
+      expect(cfg72.actorStore.reservedKeyTtlMs).toEqual(24 * HOUR)
+
+      const store72 = new ActorStore(cfg72.actorStore, ctx.actorStore.resources)
+      expect(store72.reservedKeyTtlMs).toEqual(24 * HOUR)
+
+      // Test sub-24 hours (6 hours) - must not be clamped
+      const cfg6 = envToCfg({
+        serviceHandleDomains: ['.test'],
+        blobstoreDiskLocation: '/tmp/blobstore',
+        actorStoreReservedKeyTtlMs: 6 * HOUR,
+      })
+      expect(cfg6.actorStore.reservedKeyTtlMs).toEqual(6 * HOUR)
+
+      const store6 = new ActorStore(cfg6.actorStore, ctx.actorStore.resources)
+      expect(store6.reservedKeyTtlMs).toEqual(6 * HOUR)
     })
   })
 })

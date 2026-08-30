@@ -407,8 +407,8 @@ export type ActorStoreConfig = {
   directory: string
   cacheSize: number
   disableWalAutoCheckpoint: boolean
-  maxReservedKeys?: number
-  reservedKeyTtlMs?: number
+  maxReservedKeys: number
+  reservedKeyTtlMs: number
 }
 
 export type S3BlobstoreConfig = {

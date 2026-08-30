@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import fs, { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import { HOUR, fileExists, readIfExists, rmIfExists } from '@atproto/common'
+import { fileExists, readIfExists, rmIfExists } from '@atproto/common'
 import * as crypto from '@atproto/crypto'
 import { ExportableKeypair, Keypair } from '@atproto/crypto'
 import { InvalidRequestError } from '@atproto/xrpc-server'
@@ -19,17 +19,16 @@ export class ActorStore {
   reservedKeyDir: string
   maxReservedKeys: number
   reservedKeyTtlMs: number
+  // ponytail: in-process promise chain serializes quota check-then-write; ceiling is single-process throughput
+  private reservationLock: Promise<void> = Promise.resolve()
 
   constructor(
     public cfg: ActorStoreConfig,
     public resources: ActorStoreResources,
   ) {
     this.reservedKeyDir = path.join(cfg.directory, 'reserved_keys')
-    this.maxReservedKeys = cfg.maxReservedKeys ?? 1_000
-    this.reservedKeyTtlMs = Math.min(
-      cfg.reservedKeyTtlMs ?? 1 * HOUR,
-      24 * HOUR,
-    )
+    this.maxReservedKeys = cfg.maxReservedKeys
+    this.reservedKeyTtlMs = cfg.reservedKeyTtlMs
   }
 
   async getLocation(did: string) {
@@ -150,12 +149,23 @@ export class ActorStore {
   }
 
   async reserveKeypair(did?: string): Promise<string> {
+    const prevLock = this.reservationLock
+    let release: () => void
+    this.reservationLock = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await prevLock.catch(() => {})
+    try {
+      return await this.reserveKeypairInner(did)
+    } finally {
+      release!()
+    }
+  }
+
+  private async reserveKeypairInner(did?: string): Promise<string> {
     await mkdir(this.reservedKeyDir, { recursive: true })
     let keyLoc: string | undefined
     if (did) {
-      if (typeof did !== 'string') {
-        throw new InvalidRequestError('did must be a string')
-      }
       assertSafePathPart(did)
       keyLoc = path.join(this.reservedKeyDir, did)
       const existing = await this.getReservedKeypair(did)

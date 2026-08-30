@@ -4,20 +4,17 @@ import {
   MethodAuthVerifier,
 } from '@atproto/xrpc-server'
 import {
-  AccessOutput,
   AdminTokenOutput,
-  OAuthOutput,
   UnauthenticatedOutput,
   UserServiceAuthOutput,
 } from '../../../../auth-output'
+import { AuthType, extractAuthType } from '../../../../auth-verifier'
 import { AppContext } from '../../../../context'
 import { Server } from '../../../../lexicon'
 
 type ReserveKeyAuth =
   | UserServiceAuthOutput
   | AdminTokenOutput
-  | OAuthOutput
-  | AccessOutput
   | UnauthenticatedOutput
 
 export default function (server: Server, ctx: AppContext) {
@@ -27,10 +24,10 @@ export default function (server: Server, ctx: AppContext) {
     if (isEntryway) {
       return { credentials: null }
     }
-    const authHeader = reqCtx.req.headers['authorization']
-    if (authHeader?.startsWith('Basic ')) {
+    const type = extractAuthType(reqCtx.req)
+    if (type === AuthType.BASIC) {
       return ctx.authVerifier.adminToken(reqCtx)
-    } else if (authHeader?.startsWith('Bearer ')) {
+    } else if (type === AuthType.BEARER) {
       return ctx.authVerifier.userServiceAuth(reqCtx)
     } else {
       return ctx.authVerifier.unauthenticated(reqCtx)
@@ -53,7 +50,7 @@ export default function (server: Server, ctx: AppContext) {
       }
 
       const did = input.body.did
-      if (!did || typeof did !== 'string') {
+      if (!did) {
         throw new InvalidRequestError('did is required')
       }
       const requester =

@@ -25,9 +25,6 @@ describe('entryway', () => {
     const plcRotationKey = await Secp256k1Keypair.create({ exportable: true })
     const entrywayPort = await getPort()
     plc = await TestPlc.create({})
-    const schemaSuffix = Array.from({ length: 6 }, () =>
-      String.fromCharCode(97 + Math.floor(Math.random() * 26)),
-    ).join('')
     pds = await TestPds.create({
       entrywayUrl: `http://localhost:${entrywayPort}`,
       entrywayDid: 'did:example:entryway',
@@ -40,7 +37,7 @@ describe('entryway', () => {
       inviteRequired: false,
     })
     entryway = await createEntryway({
-      dbPostgresSchema: `entryway_${schemaSuffix}`,
+      dbPostgresSchema: 'entryway',
       port: entrywayPort,
       adminPassword: 'admin-pass',
       jwtSigningKeyK256PrivateKeyHex: await getPrivateHex(jwtSigningKey),
@@ -67,6 +64,12 @@ describe('entryway', () => {
 
   afterAll(async () => {
     await plc.close()
+    await entryway.ctx.db.db.schema
+      .dropSchema('entryway')
+      .ifExists()
+      .cascade()
+      .execute()
+      .catch(() => {})
     await entryway.destroy()
     await pds.close()
   })
@@ -197,6 +200,12 @@ const createEntryway = async (
   const cfg = pdsEntryway.envToCfg(env)
   const secrets = pdsEntryway.envToSecrets(env)
   const server = await pdsEntryway.PDS.create(cfg, secrets)
+  await server.ctx.db.db.schema
+    .dropSchema('entryway')
+    .ifExists()
+    .cascade()
+    .execute()
+    .catch(() => {})
   await server.ctx.db.migrateToLatestOrThrow()
   await server.start()
   // patch entryway access token verification to handle internal service auth pds -> entryway
