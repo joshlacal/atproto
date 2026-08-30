@@ -39,7 +39,8 @@ export class DidWebResolver extends BaseResolver {
       decodedId.includes('/') ||
       decodedId.includes('\\') ||
       decodedId.includes('?') ||
-      decodedId.includes('#')
+      decodedId.includes('#') ||
+      decodedId.includes('@')
     ) {
       throw new UnsupportedDidWebPathError(did)
     }
@@ -62,19 +63,42 @@ export class DidWebResolver extends BaseResolver {
       hostname.includes('/') ||
       hostname.includes('\\') ||
       hostname.includes('?') ||
-      hostname.includes('#')
+      hostname.includes('#') ||
+      hostname.includes('@')
     ) {
       throw new UnsupportedDidWebPathError(did)
     }
 
-    await validateGlobalHost(hostname, this.allowLocalhost)
+    let url: URL
+    try {
+      url = new URL(`https://${hostname}${DOC_PATH}`)
+    } catch {
+      throw new PoorlyFormattedDidError(did)
+    }
 
-    const path = hostname + DOC_PATH
-    const url = new URL(`https://${path}`)
+    if (url.username || url.password) {
+      throw new PoorlyFormattedDidError(did)
+    }
+
     if (url.hostname === 'localhost' && this.allowLocalhost) {
       url.protocol = 'http'
     }
 
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new PoorlyFormattedDidError(did)
+    }
+    if (
+      url.protocol === 'http:' &&
+      !(
+        this.allowLocalhost &&
+        (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+      )
+    ) {
+      throw new PoorlyFormattedDidError(did)
+    }
+
+    const normalizedHostname = url.hostname.replace(/\.+$/, '')
+    await validateGlobalHost(normalizedHostname, this.allowLocalhost)
     const fetchFn = this.fetch ?? globalThis.fetch
 
     return timed(this.timeout, async (signal) => {
@@ -87,7 +111,7 @@ export class DidWebResolver extends BaseResolver {
       // Positively not found, versus due to e.g. network error
       if (!res.ok) return null
 
-      const bodyBytes = await readBodyWithLimit(res, MAX_DID_DOC_SIZE)
+      const bodyBytes = await readBodyWithLimit(res, MAX_DID_DOC_SIZE, signal)
       const text = new TextDecoder().decode(bodyBytes)
       return JSON.parse(text)
     })

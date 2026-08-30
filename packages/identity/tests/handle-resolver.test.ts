@@ -1,7 +1,9 @@
 import { HandleResolver } from '../src'
 
 jest.mock('node:dns/promises', () => {
+  const actual = jest.requireActual('node:dns/promises')
   return {
+    ...actual,
     resolveTxt: (handle: string) => {
       if (handle === '_atproto.simple.test') {
         return [['did=did:example:simpleDid']]
@@ -96,9 +98,13 @@ describe('handle resolver', () => {
       }
       const testResolver = new HandleResolver({ fetch: mockFetch })
       expect(await testResolver.resolveHttp('127.0.0.1')).toBeUndefined()
+      expect(await testResolver.resolveHttp('127.0.0.1.')).toBeUndefined()
       expect(await testResolver.resolveHttp('10.0.0.1')).toBeUndefined()
+      expect(await testResolver.resolveHttp('100.64.0.1')).toBeUndefined()
       expect(await testResolver.resolveHttp('localhost')).toBeUndefined()
       expect(await testResolver.resolveHttp('internal.lan')).toBeUndefined()
+      expect(await testResolver.resolveHttp('foo@10.0.0.1')).toBeUndefined()
+      expect(await testResolver.resolveHttp('foo@169.254.169.254')).toBeUndefined()
       expect(httpCalled).toBe(false)
     })
 
@@ -140,6 +146,33 @@ describe('handle resolver', () => {
       const did = await testResolver.resolveHttp('localhost')
       expect(did).toBeUndefined()
       expect(streamCancelled).toBe(true)
+    })
+
+    it('times out when handle HTTP fallback response body stalls', async () => {
+      const stallingStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([100, 105, 100, 58])) // "did:"
+          // Intentionally do not enqueue remaining bytes or close - stream stalls
+        },
+      })
+      const mockFetch: typeof fetch = async () => {
+        return new Response(stallingStream, { status: 200 })
+      }
+      const testResolver = new HandleResolver({
+        timeout: 50,
+        fetch: mockFetch,
+        allowLocalhost: true,
+      })
+      const did = await testResolver.resolveHttp('localhost')
+      expect(did).toBeUndefined()
+    })
+
+    it('accepts IP literals as backup nameservers without failing', async () => {
+      const testResolver = new HandleResolver({
+        backupNameservers: ['1.1.1.1', '8.8.8.8'],
+      })
+      const ips = await testResolver.getBackupNameserverIps()
+      expect(ips).toEqual(['1.1.1.1', '8.8.8.8'])
     })
   })
 })

@@ -1,4 +1,5 @@
 import dns from 'node:dns/promises'
+import net from 'node:net'
 import { HandleResolverOpts } from '../types'
 import { readBodyWithLimit, validateGlobalHost } from '../util'
 
@@ -46,57 +47,81 @@ export class HandleResolver {
     handle: string,
     signal?: AbortSignal,
   ): Promise<string | undefined> {
+    let url: URL
     try {
-      await validateGlobalHost(handle, this.allowLocalhost)
+      const scheme =
+        this.allowLocalhost && handle.toLowerCase() === 'localhost'
+          ? 'http'
+          : 'https'
+      url = new URL('/.well-known/atproto-did', `${scheme}://${handle}`)
     } catch {
       return undefined
     }
 
-    const scheme =
-      this.allowLocalhost && handle.toLowerCase() === 'localhost'
-        ? 'http'
-        : 'https'
-    const url = new URL('/.well-known/atproto-did', `${scheme}://${handle}`)
-    const fetchFn = this.fetch ?? globalThis.fetch
-    try {
-      const abortController = new AbortController()
-      const timeoutId = setTimeout(() => abortController.abort(), this.timeout)
+    if (url.username || url.password) {
+      return undefined
+    }
 
-      let effectiveSignal: AbortSignal
-      if (signal) {
-        if (typeof AbortSignal.any === 'function') {
-          effectiveSignal = AbortSignal.any([signal, abortController.signal])
-        } else {
-          signal.addEventListener('abort', () => abortController.abort(), {
-            once: true,
-          })
-          effectiveSignal = abortController.signal
-        }
+    if (
+      url.protocol !== 'https:' &&
+      !(
+        this.allowLocalhost &&
+        url.protocol === 'http:' &&
+        (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+      )
+    ) {
+      return undefined
+    }
+
+    const normalizedHostname = url.hostname.replace(/\.+$/, '')
+    try {
+      await validateGlobalHost(normalizedHostname, this.allowLocalhost)
+    } catch {
+      return undefined
+    }
+
+    const fetchFn = this.fetch ?? globalThis.fetch
+    const abortController = new AbortController()
+    const timeoutId = setTimeout(() => abortController.abort(), this.timeout)
+
+    let effectiveSignal: AbortSignal
+    if (signal) {
+      if (typeof AbortSignal.any === 'function') {
+        effectiveSignal = AbortSignal.any([signal, abortController.signal])
       } else {
+        signal.addEventListener('abort', () => abortController.abort(), {
+          once: true,
+        })
         effectiveSignal = abortController.signal
       }
+    } else {
+      effectiveSignal = abortController.signal
+    }
 
-      let res: Response
-      try {
-        res = await fetchFn(url, {
-          signal: effectiveSignal,
-          redirect: 'error',
-        })
-      } finally {
-        clearTimeout(timeoutId)
-      }
+    try {
+      const res = await fetchFn(url, {
+        signal: effectiveSignal,
+        redirect: 'error',
+      })
 
       if (!res.ok) return undefined
 
-      const bodyBytes = await readBodyWithLimit(res, MAX_HANDLE_BODY_SIZE)
+      const bodyBytes = await readBodyWithLimit(
+        res,
+        MAX_HANDLE_BODY_SIZE,
+        effectiveSignal,
+      )
       const text = new TextDecoder().decode(bodyBytes)
       const did = text.split('\n')[0].trim()
       if (typeof did === 'string' && did.startsWith('did:')) {
         return did
       }
       return undefined
-    } catch (err) {
+    } catch {
       return undefined
+    } finally {
+      clearTimeout(timeoutId)
+      abortController.abort()
     }
   }
 
@@ -134,15 +159,20 @@ export class HandleResolver {
     if (!this.backupNameserverIps) {
       const ips = await Promise.all(
         this.backupNameservers.map(async (ns) => {
+          if (net.isIP(ns)) {
+            return ns
+          }
           try {
-            const res = await dns.resolve(ns)
-            return res[0]
-          } catch (err) {
+            const res = await dns.lookup(ns)
+            return res.address
+          } catch {
             return undefined
           }
         }),
       )
-      this.backupNameserverIps = ips.filter((ip) => ip !== undefined)
+      this.backupNameserverIps = ips.filter(
+        (ip): ip is string => typeof ip === 'string',
+      )
     }
     return this.backupNameserverIps
   }

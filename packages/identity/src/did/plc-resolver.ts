@@ -38,7 +38,7 @@ export class DidPlcResolver extends BaseResolver {
         throw Object.assign(new Error(res.statusText), { status: res.status })
       }
 
-      const bodyBytes = await readBodyWithLimit(res, MAX_PLC_DOC_SIZE)
+      const bodyBytes = await readBodyWithLimit(res, MAX_PLC_DOC_SIZE, signal)
       const text = new TextDecoder().decode(bodyBytes)
       return JSON.parse(text)
     })

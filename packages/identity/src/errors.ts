@@ -30,3 +30,21 @@ export class UnsupportedDidWebPathError extends Error {
     super(`Unsupported did:web paths: ${did}`)
   }
 }
+
+export class ForbiddenHostError extends Error {
+  constructor(public host: string) {
+    super(`Forbidden hostname "${host}"`)
+    this.name = 'ForbiddenHostError'
+  }
+}
+
+export class ForbiddenIpError extends ForbiddenHostError {
+  constructor(
+    public ip: string,
+    public host: string,
+  ) {
+    super(host)
+    this.message = `Forbidden IP address "${ip}" for host "${host}"`
+    this.name = 'ForbiddenIpError'
+  }
+}

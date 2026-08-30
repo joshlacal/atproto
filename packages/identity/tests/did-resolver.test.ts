@@ -1,3 +1,4 @@
+import dns from 'node:dns/promises'
 import * as plc from '@did-plc/lib'
 import { Database as DidPlcDb, PlcServer } from '@did-plc/server'
 import getPort from 'get-port'
@@ -141,14 +142,45 @@ describe('did resolver', () => {
         testResolver.resolve('did:web:127.0.0.1'),
       ).rejects.toThrow('Forbidden hostname "127.0.0.1"')
       await expect(
+        testResolver.resolve('did:web:127.0.0.1.'),
+      ).rejects.toThrow('Forbidden hostname')
+      await expect(
         testResolver.resolve('did:web:10.0.0.1'),
       ).rejects.toThrow('Forbidden hostname "10.0.0.1"')
+      await expect(
+        testResolver.resolve('did:web:100.64.0.1'),
+      ).rejects.toThrow('Forbidden hostname "100.64.0.1"')
       await expect(
         testResolver.resolve('did:web:169.254.169.254'),
       ).rejects.toThrow('Forbidden hostname "169.254.169.254"')
       await expect(
+        testResolver.resolve('did:web:fe8a::1'),
+      ).rejects.toThrow()
+      await expect(
+        testResolver.resolve('did:web:%5Bfe8a%3A%3A1%5D'),
+      ).rejects.toThrow('Forbidden hostname')
+      await expect(
         testResolver.resolve('did:web:%5B%3A%3Affff%3A127.0.0.1%5D'),
       ).rejects.toThrow('Forbidden hostname')
+      await expect(
+        testResolver.resolve('did:web:%5B%3A%3Affff%3A7f00%3A1%5D'),
+      ).rejects.toThrow('Forbidden hostname')
+      expect(fetchCalled).toBe(false)
+    })
+
+    it('rejects URL userinfo (@) and SSRF bypass attempts without making network calls', async () => {
+      let fetchCalled = false
+      const countingFetch: typeof fetch = async () => {
+        fetchCalled = true
+        return new Response('{}', { status: 200 })
+      }
+      const testResolver = new DidResolver({ fetch: countingFetch })
+      await expect(
+        testResolver.resolve('did:web:foo%40169.254.169.254'),
+      ).rejects.toThrow()
+      await expect(
+        testResolver.resolve('did:web:foo%40localhost'),
+      ).rejects.toThrow()
       expect(fetchCalled).toBe(false)
     })
 
@@ -163,13 +195,38 @@ describe('did resolver', () => {
       await expect(
         testResolver.resolve('did:web:localhost'),
       ).rejects.toThrow('Forbidden hostname "localhost"')
+
+      // Mock DNS lookup to return a private IP for a non-denylisted hostname
+      const lookupSpy = jest
+        .spyOn(dns, 'lookup')
+        .mockResolvedValueOnce([
+          { address: '100.64.0.1', family: 4 },
+        ] as unknown as Awaited<ReturnType<typeof dns.lookup>>)
+
+      try {
+        await expect(
+          testResolver.resolve('did:web:rebind.example.com'),
+        ).rejects.toThrow(
+          'Forbidden IP address "100.64.0.1" for host "rebind.example.com"',
+        )
+      } finally {
+        lookupSpy.mockRestore()
+      }
       expect(fetchCalled).toBe(false)
     })
 
-    it('rejects HTTP redirects (redirect: error)', async () => {
-      const redirectFetch: typeof fetch = async () => {
-        const err = new TypeError('Failed to fetch: redirect mode is error')
-        throw err
+    it('rejects HTTP redirects (redirect: error) and does not follow location', async () => {
+      let callCount = 0
+      const redirectFetch: typeof fetch = async (_input, init) => {
+        callCount++
+        expect(init?.redirect).toBe('error')
+        if (init?.redirect === 'error') {
+          throw new TypeError('Failed to fetch: redirect mode is error')
+        }
+        return new Response(null, {
+          status: 302,
+          headers: { location: 'https://169.254.169.254/.well-known/did.json' },
+        })
       }
       const testResolver = new DidResolver({
         fetch: redirectFetch,
@@ -177,7 +234,26 @@ describe('did resolver', () => {
       })
       await expect(
         testResolver.resolve('did:web:localhost'),
-      ).rejects.toThrow()
+      ).rejects.toThrow('Failed to fetch: redirect mode is error')
+      expect(callCount).toBe(1)
+    })
+
+    it('allows global hosts with custom ports', async () => {
+      let requestedUrl = ''
+      const mockFetch: typeof fetch = async (input) => {
+        requestedUrl = input.toString()
+        return new Response(
+          JSON.stringify({
+            id: 'did:web:example.com%3A8443',
+            verificationMethod: [],
+          }),
+          { status: 200 },
+        )
+      }
+      const testResolver = new DidResolver({ fetch: mockFetch })
+      const doc = await testResolver.resolve('did:web:example.com%3A8443')
+      expect(doc).toBeDefined()
+      expect(requestedUrl).toBe('https://example.com:8443/.well-known/did.json')
     })
 
     it('times out and rejects hanging fetch requests (3 s limit)', async () => {
