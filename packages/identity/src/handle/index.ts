@@ -1,3 +1,4 @@
+import { unicastFetchWrap } from '@atproto-labs/fetch-node'
 import dns from 'node:dns/promises'
 import net from 'node:net'
 import { HandleResolverOpts } from '../types'
@@ -80,7 +81,11 @@ export class HandleResolver {
       return undefined
     }
 
-    const fetchFn = this.fetch ?? globalThis.fetch
+    const baseFetch = this.fetch ?? globalThis.fetch
+    const fetchFn =
+      this.allowLocalhost || (this.fetch && this.fetch !== globalThis.fetch)
+        ? baseFetch
+        : unicastFetchWrap({ fetch: baseFetch })
     const abortController = new AbortController()
     const timeoutId = setTimeout(() => abortController.abort(), this.timeout)
 

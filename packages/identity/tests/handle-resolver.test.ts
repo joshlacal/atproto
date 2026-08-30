@@ -1,3 +1,5 @@
+import nodeDns from 'node:dns'
+import dns from 'node:dns/promises'
 import { HandleResolver } from '../src'
 
 jest.mock('node:dns/promises', () => {
@@ -106,6 +108,51 @@ describe('handle resolver', () => {
       expect(await testResolver.resolveHttp('foo@10.0.0.1')).toBeUndefined()
       expect(await testResolver.resolveHttp('foo@169.254.169.254')).toBeUndefined()
       expect(httpCalled).toBe(false)
+    })
+    it('prevents DNS rebinding in HTTP fallback with divergent resolutions', async () => {
+      const testResolver = new HandleResolver()
+
+      // Preflight DNS returns public IP (preflight check passes)
+      const preflightLookupSpy = jest
+        .spyOn(dns, 'lookup')
+        .mockResolvedValueOnce([
+          { address: '93.184.216.34', family: 4 },
+        ] as unknown as nodeDns.LookupAddress)
+
+      // Connect-time DNS in unicastLookup returns private IP (DNS rebinding)
+      const origNodeDnsLookup = nodeDns.lookup
+      const nodeDnsLookupSpy = jest
+        .spyOn(nodeDns, 'lookup')
+        .mockImplementation(((
+          hostname: string,
+          options: unknown,
+          callback?: unknown,
+        ) => {
+          let cb = callback as
+            | ((
+                err: NodeJS.ErrnoException | null,
+                addresses: nodeDns.LookupAddress[],
+              ) => void)
+            | undefined
+          let opts = options
+          if (typeof options === 'function') {
+            cb = options as typeof cb
+            opts = {}
+          }
+          if (hostname === 'rebind-divergent.customdomain.org') {
+            cb?.(null, [{ address: '127.0.0.1', family: 4 }])
+            return
+          }
+          return (origNodeDnsLookup as Function)(hostname, opts, cb)
+        }) as typeof nodeDns.lookup)
+
+      try {
+        const did = await testResolver.resolveHttp('rebind-divergent.customdomain.org')
+        expect(did).toBeUndefined()
+      } finally {
+        preflightLookupSpy.mockRestore()
+        nodeDnsLookupSpy.mockRestore()
+      }
     })
 
     it('times out and returns undefined on hanging HTTP fallback', async () => {

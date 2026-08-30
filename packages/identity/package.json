@@ -25,6 +25,7 @@
     "node": ">=18.7.0"
   },
   "dependencies": {
+    "@atproto-labs/fetch-node": "workspace:^",
     "@atproto/common-web": "workspace:^",
     "@atproto/crypto": "workspace:^"
   },

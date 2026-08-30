@@ -1,3 +1,4 @@
+import { unicastFetchWrap } from '@atproto-labs/fetch-node'
 import { PoorlyFormattedDidError, UnsupportedDidWebPathError } from '../errors'
 import { DidCache } from '../types'
 import { readBodyWithLimit, validateGlobalHost } from '../util'
@@ -99,8 +100,11 @@ export class DidWebResolver extends BaseResolver {
 
     const normalizedHostname = url.hostname.replace(/\.+$/, '')
     await validateGlobalHost(normalizedHostname, this.allowLocalhost)
-    const fetchFn = this.fetch ?? globalThis.fetch
-
+    const baseFetch = this.fetch ?? globalThis.fetch
+    const fetchFn =
+      this.allowLocalhost || (this.fetch && this.fetch !== globalThis.fetch)
+        ? baseFetch
+        : unicastFetchWrap({ fetch: baseFetch })
     return timed(this.timeout, async (signal) => {
       const res = await fetchFn(url, {
         signal,

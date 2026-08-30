@@ -1,3 +1,4 @@
+import nodeDns from 'node:dns'
 import dns from 'node:dns/promises'
 import * as plc from '@did-plc/lib'
 import { Database as DidPlcDb, PlcServer } from '@did-plc/server'
@@ -237,6 +238,59 @@ describe('did resolver', () => {
         lookupSpy.mockRestore()
       }
       expect(fetchCalled).toBe(false)
+    })
+    it('prevents DNS rebinding with divergent resolutions between preflight and connect time', async () => {
+      const testResolver = new DidResolver()
+
+      // Preflight DNS returns public IP (preflight check passes)
+      const preflightLookupSpy = jest
+        .spyOn(dns, 'lookup')
+        .mockResolvedValueOnce([
+          { address: '93.184.216.34', family: 4 },
+        ] as unknown as nodeDns.LookupAddress)
+
+      // Connect-time DNS in unicastLookup returns private IP (DNS rebinding)
+      const origNodeDnsLookup = nodeDns.lookup
+      const nodeDnsLookupSpy = jest
+        .spyOn(nodeDns, 'lookup')
+        .mockImplementation(((
+          hostname: string,
+          options: unknown,
+          callback?: unknown,
+        ) => {
+          let cb = callback as
+            | ((
+                err: NodeJS.ErrnoException | null,
+                addresses: nodeDns.LookupAddress[],
+              ) => void)
+            | undefined
+          let opts = options
+          if (typeof options === 'function') {
+            cb = options as typeof cb
+            opts = {}
+          }
+          if (hostname === 'rebind-divergent.customdomain.org') {
+            cb?.(null, [{ address: '127.0.0.1', family: 4 }])
+            return
+          }
+          return (origNodeDnsLookup as Function)(hostname, opts, cb)
+        }) as typeof nodeDns.lookup)
+
+      try {
+        let thrownError: (Error & { cause?: Error }) | undefined
+        try {
+          await testResolver.resolve('did:web:rebind-divergent.customdomain.org')
+        } catch (err: unknown) {
+          thrownError = err as Error & { cause?: Error }
+        }
+        expect(thrownError).toBeDefined()
+        expect(thrownError?.cause?.message).toBe(
+          'Hostname resolved to non-unicast address',
+        )
+      } finally {
+        preflightLookupSpy.mockRestore()
+        nodeDnsLookupSpy.mockRestore()
+      }
     })
 
 
