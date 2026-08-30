@@ -88,14 +88,58 @@ describe('handle resolver', () => {
       expect(did).toBe('did:example:httpFallbackDid')
     })
 
-    it('rejects oversized handle HTTP fallback bodies (> 10 KiB)', async () => {
-      const oversizedBody = 'did:example:tooLong' + 'A'.repeat(15 * 1024)
+    it('rejects forbidden and private hosts in handle HTTP fallback without fetching', async () => {
+      let httpCalled = false
       const mockFetch: typeof fetch = async () => {
-        return new Response(oversizedBody, { status: 200 })
+        httpCalled = true
+        return new Response('did:example:httpFallbackDid', { status: 200 })
       }
       const testResolver = new HandleResolver({ fetch: mockFetch })
-      const did = await testResolver.resolve('bad.test')
+      expect(await testResolver.resolveHttp('127.0.0.1')).toBeUndefined()
+      expect(await testResolver.resolveHttp('10.0.0.1')).toBeUndefined()
+      expect(await testResolver.resolveHttp('localhost')).toBeUndefined()
+      expect(await testResolver.resolveHttp('internal.lan')).toBeUndefined()
+      expect(httpCalled).toBe(false)
+    })
+
+    it('times out and returns undefined on hanging HTTP fallback', async () => {
+      const hangingFetch: typeof fetch = (_input, init) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new Error('The operation was aborted'))
+          })
+        })
+      }
+      const testResolver = new HandleResolver({
+        timeout: 50,
+        fetch: hangingFetch,
+        allowLocalhost: true,
+      })
+      const did = await testResolver.resolveHttp('localhost')
       expect(did).toBeUndefined()
+    })
+
+    it('rejects oversized handle HTTP fallback bodies (> 10 KiB) and cancels stream', async () => {
+      let streamCancelled = false
+      const oversizedStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(6 * 1024))
+          controller.enqueue(new Uint8Array(6 * 1024))
+        },
+        cancel() {
+          streamCancelled = true
+        },
+      })
+      const mockFetch: typeof fetch = async () => {
+        return new Response(oversizedStream, { status: 200 })
+      }
+      const testResolver = new HandleResolver({
+        fetch: mockFetch,
+        allowLocalhost: true,
+      })
+      const did = await testResolver.resolveHttp('localhost')
+      expect(did).toBeUndefined()
+      expect(streamCancelled).toBe(true)
     })
   })
 })

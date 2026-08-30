@@ -26,7 +26,7 @@ describe('did resolver', () => {
     await plcServer.start()
 
     plcUrl = 'http://localhost:' + plcPort
-    resolver = new DidResolver({ plcUrl, fetch: globalThis.fetch })
+    resolver = new DidResolver({ plcUrl, allowLocalhost: true })
 
     close = async () => {
       await webServer.close()
@@ -130,37 +130,99 @@ describe('did resolver', () => {
       ).rejects.toThrow('Unsupported did:web paths')
     })
 
-    it('default DidResolver rejects loopback, private, and link-local addresses', async () => {
-      const defaultResolver = new DidResolver()
+    it('rejects loopback, private, and link-local addresses without making network calls', async () => {
+      let fetchCalled = false
+      const countingFetch: typeof fetch = async () => {
+        fetchCalled = true
+        return new Response('{}', { status: 200 })
+      }
+      const testResolver = new DidResolver({ fetch: countingFetch })
       await expect(
-        defaultResolver.resolve('did:web:127.0.0.1'),
-      ).rejects.toThrow()
+        testResolver.resolve('did:web:127.0.0.1'),
+      ).rejects.toThrow('Forbidden hostname "127.0.0.1"')
       await expect(
-        defaultResolver.resolve('did:web:10.0.0.1'),
-      ).rejects.toThrow()
+        testResolver.resolve('did:web:10.0.0.1'),
+      ).rejects.toThrow('Forbidden hostname "10.0.0.1"')
       await expect(
-        defaultResolver.resolve('did:web:169.254.169.254'),
-      ).rejects.toThrow()
+        testResolver.resolve('did:web:169.254.169.254'),
+      ).rejects.toThrow('Forbidden hostname "169.254.169.254"')
       await expect(
-        defaultResolver.resolve('did:web:%5B%3A%3Affff%3A127.0.0.1%5D'),
+        testResolver.resolve('did:web:%5B%3A%3Affff%3A127.0.0.1%5D'),
+      ).rejects.toThrow('Forbidden hostname')
+      expect(fetchCalled).toBe(false)
+    })
+
+    it('rejects DNS rebinding / hostnames resolving to private IP addresses', async () => {
+      let fetchCalled = false
+      const countingFetch: typeof fetch = async () => {
+        fetchCalled = true
+        return new Response('{}', { status: 200 })
+      }
+      const testResolver = new DidResolver({ fetch: countingFetch })
+      // localhost is blocked by both hostname and DNS resolution check
+      await expect(
+        testResolver.resolve('did:web:localhost'),
+      ).rejects.toThrow('Forbidden hostname "localhost"')
+      expect(fetchCalled).toBe(false)
+    })
+
+    it('rejects HTTP redirects (redirect: error)', async () => {
+      const redirectFetch: typeof fetch = async () => {
+        const err = new TypeError('Failed to fetch: redirect mode is error')
+        throw err
+      }
+      const testResolver = new DidResolver({
+        fetch: redirectFetch,
+        allowLocalhost: true,
+      })
+      await expect(
+        testResolver.resolve('did:web:localhost'),
       ).rejects.toThrow()
     })
 
-    it('rejects oversized DID documents (> 64 KiB)', async () => {
-      const oversizedJson = JSON.stringify({
-        id: 'did:web:example.com',
-        padding: 'A'.repeat(70 * 1024),
+    it('times out and rejects hanging fetch requests (3 s limit)', async () => {
+      const hangingFetch: typeof fetch = (_input, init) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new Error('The operation was aborted'))
+          })
+        })
+      }
+      const testResolver = new DidResolver({
+        timeout: 50,
+        fetch: hangingFetch,
+        allowLocalhost: true,
+      })
+      await expect(
+        testResolver.resolve('did:web:localhost'),
+      ).rejects.toThrow('The operation was aborted')
+    })
+
+    it('rejects oversized DID documents (> 64 KiB) before buffering entire stream', async () => {
+      let streamCancelled = false
+      const oversizedStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(32 * 1024))
+          controller.enqueue(new Uint8Array(40 * 1024))
+        },
+        cancel() {
+          streamCancelled = true
+        },
       })
       const mockFetch: typeof fetch = async () => {
-        return new Response(oversizedJson, {
+        return new Response(oversizedStream, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         })
       }
-      const resolverWithMock = new DidResolver({ fetch: mockFetch })
+      const resolverWithMock = new DidResolver({
+        fetch: mockFetch,
+        allowLocalhost: true,
+      })
       await expect(
-        resolverWithMock.resolve('did:web:example.com'),
-      ).rejects.toThrow()
+        resolverWithMock.resolve('did:web:localhost'),
+      ).rejects.toThrow('Response size exceeds limit (65536 bytes)')
+      expect(streamCancelled).toBe(true)
     })
   })
 })

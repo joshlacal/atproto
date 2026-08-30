@@ -153,5 +153,52 @@ describe('car', () => {
         'Truncated CAR header',
       )
     })
+
+    it('rejects oversized CAR header frame before buffering stream', async () => {
+      // Encodes header size = 100,000 > MAX_CAR_HEADER_SIZE (64 KiB)
+      // 100,000 in LEB128 is [0xa0, 0x8d, 0x06]
+      const oversizedHeader = new Uint8Array([0xa0, 0x8d, 0x06, 0x01, 0x02])
+      await expect(readCarStream([oversizedHeader])).rejects.toThrow(
+        'CAR header exceeds maximum allowed size',
+      )
+    })
+
+    it('rejects oversized CAR block frame before buffering stream', async () => {
+      // Valid CAR header (roots: [block0.cid]) + oversized block frame declaration
+      const block0 = await dataToCborBlock({ block: 0 })
+      async function* emptyBlockIter() {}
+      const validHeaderCar = await streamToBytes(
+        writeCarStream(block0.cid, emptyBlockIter()),
+      )
+      // 5242880 in LEB128 is [0x80, 0x80, 0x02] (5 * 1024 * 1024 = 0x500000)
+      // 0x500000: bits 0-6: 0x00 -> 0x80, bits 7-13: 0x00 -> 0x80, bits 14-20: 0x14 -> 0x14
+      // Actually LEB128 for 5242880:
+      // 5242880 = 0x500000 = (0x01 << 22) + (0x01 << 20) ...
+      // 5242880 & 0x7f = 0 -> 0x80
+      // (5242880 >> 7) & 0x7f = 0 -> 0x80
+      // (5242880 >> 14) & 0x7f = 0x20 -> 0xa0
+      // (5242880 >> 21) & 0x7f = 0x02 -> 0x02
+      // [0x80, 0x80, 0xa0, 0x02] = 0 + 0 + (32 << 14) + (2 << 21) = 524288 + 4194304 = 4718592
+      // For 3,000,000 > 2,097,152 (2 MiB):
+      // 3000000 = [0xc0, 0x96, 0xb7, 0x01] = 0x40 + (0x16 << 7) + (0x37 << 14) + (1 << 21) = 64 + 2816 + 901120 + 2097152 = 3001152
+      const oversizedBlockFrame = new Uint8Array([
+        ...validHeaderCar,
+        0xc0,
+        0x96,
+        0xb7,
+        0x01,
+        0x01,
+        0x02,
+      ])
+      const car = await readCarStream([oversizedBlockFrame])
+      const iterate = async () => {
+        for await (const _ of car.blocks) {
+          // iterate
+        }
+      }
+      await expect(iterate()).rejects.toThrow(
+        'CAR block exceeds maximum allowed size',
+      )
+    })
   })
 })

@@ -1,4 +1,5 @@
 import { DidCache } from '../types'
+import { readBodyWithLimit } from '../util'
 import { BaseResolver } from './base-resolver'
 import { timed } from './util'
 
@@ -6,15 +7,18 @@ export const MAX_PLC_DOC_SIZE = 64 * 1024 // 64 KiB
 
 export class DidPlcResolver extends BaseResolver {
   public fetch?: typeof globalThis.fetch
+  public allowLocalhost: boolean
 
   constructor(
     public plcUrl: string,
     public timeout: number = 3000,
     public cache?: DidCache,
     fetchFn?: typeof globalThis.fetch,
+    allowLocalhost = false,
   ) {
     super(cache)
     this.fetch = fetchFn
+    this.allowLocalhost = allowLocalhost
   }
 
   async resolveNoCheck(did: string): Promise<unknown> {
@@ -34,14 +38,8 @@ export class DidPlcResolver extends BaseResolver {
         throw Object.assign(new Error(res.statusText), { status: res.status })
       }
 
-      const buffer = await res.arrayBuffer()
-      if (buffer.byteLength > MAX_PLC_DOC_SIZE) {
-        throw new Error(
-          `Response size exceeds limit (${MAX_PLC_DOC_SIZE} bytes)`,
-        )
-      }
-
-      const text = new TextDecoder().decode(buffer)
+      const bodyBytes = await readBodyWithLimit(res, MAX_PLC_DOC_SIZE)
+      const text = new TextDecoder().decode(bodyBytes)
       return JSON.parse(text)
     })
   }

@@ -114,6 +114,9 @@ export const readCarReader = async (
     if (headerSize === null) {
       throw new Error('Could not parse CAR header')
     }
+    if (headerSize > MAX_CAR_HEADER_SIZE) {
+      throw new Error('CAR header exceeds maximum allowed size')
+    }
     const headerBytes = await reader.read(headerSize)
     if (headerBytes.byteLength < headerSize) {
       throw new Error('Truncated CAR header')
@@ -165,6 +168,9 @@ async function* readCarBlocksIterGenerator(
       if (blockSize === null) {
         break
       }
+      if (blockSize > MAX_CAR_BLOCK_SIZE) {
+        throw new Error('CAR block exceeds maximum allowed size')
+      }
       const blockBytes = await reader.read(blockSize)
       if (blockBytes.byteLength < blockSize) {
         throw new Error('Truncated CAR block')
@@ -195,6 +201,8 @@ export async function* verifyIncomingCarBlocks(
 }
 
 export const MAX_VARINT_BYTES = 8
+export const MAX_CAR_HEADER_SIZE = 64 * 1024 // 64 KiB
+export const MAX_CAR_BLOCK_SIZE = 2 * 1024 * 1024 // 2 MiB
 
 const readVarint = async (reader: BytesReader): Promise<number | null> => {
   let res = 0

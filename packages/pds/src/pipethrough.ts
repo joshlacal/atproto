@@ -71,7 +71,6 @@ export const proxyHandler = (ctx: AppContext): CatchallHandler => {
 
       const { credentials } = excludeErrorResult(authResult)
 
-      const { url: origin } = await parseProxyInfo(ctx, req, lxm)
       if (
         credentials.type === 'access' &&
         !isAccessPrivileged(credentials.scope) &&
@@ -79,6 +78,8 @@ export const proxyHandler = (ctx: AppContext): CatchallHandler => {
       ) {
         throw new InvalidRequestError('Bad token method', 'InvalidToken')
       }
+
+      const { url: origin } = await parseProxyInfo(ctx, req, lxm)
 
       const headers: IncomingHttpHeaders = {
         'accept-encoding': req.headers['accept-encoding'] || 'identity',
@@ -273,28 +274,8 @@ export const parseProxyHeader = async (
 ): Promise<{ did: string; url: string }> => {
   // /!\ Hot path
 
+  const did = parseProxyDid(proxyTo)
   const hashIndex = proxyTo.indexOf('#')
-
-  if (hashIndex === 0) {
-    throw new InvalidRequestError('no did specified in proxy header')
-  }
-
-  if (hashIndex === -1 || hashIndex === proxyTo.length - 1) {
-    throw new InvalidRequestError('no service id specified in proxy header')
-  }
-
-  // More than one hash
-  if (proxyTo.indexOf('#', hashIndex + 1) !== -1) {
-    throw new InvalidRequestError('invalid proxy header format')
-  }
-
-  // Basic validation
-  if (proxyTo.includes(' ')) {
-    throw new InvalidRequestError('proxy header cannot contain spaces')
-  }
-
-  const did = proxyTo.slice(0, hashIndex)
-
   // Special case a configured appview, while still proxying correctly any other appview
   if (
     ctx.cfg.bskyAppView &&

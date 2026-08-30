@@ -9,12 +9,14 @@ export type IdentityResolverOpts = {
   didCache?: DidCache
   backupNameservers?: string[]
   fetch?: typeof fetch
+  allowLocalhost?: boolean
 }
 
 export type HandleResolverOpts = {
   timeout?: number
   backupNameservers?: string[]
   fetch?: typeof fetch
+  allowLocalhost?: boolean
 }
 
 export type DidResolverOpts = {
@@ -22,6 +24,7 @@ export type DidResolverOpts = {
   plcUrl?: string
   didCache?: DidCache
   fetch?: typeof fetch
+  allowLocalhost?: boolean
 }
 
 export type AtprotoData = {

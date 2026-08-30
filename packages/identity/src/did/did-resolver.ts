@@ -9,11 +9,19 @@ export class DidResolver extends BaseResolver {
 
   constructor(opts: DidResolverOpts = {}) {
     super(opts.didCache)
-    const { timeout = 3000, plcUrl = 'https://plc.directory', fetch } = opts
+    const {
+      timeout = 3000,
+      plcUrl = 'https://plc.directory',
+      fetch,
+      allowLocalhost,
+    } = opts
     // do not pass cache to sub-methods or we will be double caching
     this.methods = new Map([
-      ['plc', new DidPlcResolver(plcUrl, timeout, undefined, fetch)],
-      ['web', new DidWebResolver(timeout, undefined, fetch)],
+      [
+        'plc',
+        new DidPlcResolver(plcUrl, timeout, undefined, fetch, allowLocalhost),
+      ],
+      ['web', new DidWebResolver(timeout, undefined, fetch, allowLocalhost)],
     ])
   }
 

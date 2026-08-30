@@ -7,12 +7,19 @@ export class IdResolver {
   public did: DidResolver
 
   constructor(opts: IdentityResolverOpts = {}) {
-    const { timeout = 3000, plcUrl, didCache, fetch } = opts
+    const { timeout = 3000, plcUrl, didCache, fetch, allowLocalhost } = opts
     this.handle = new HandleResolver({
       timeout,
       backupNameservers: opts.backupNameservers,
       fetch,
+      allowLocalhost,
     })
-    this.did = new DidResolver({ timeout, plcUrl, didCache, fetch })
+    this.did = new DidResolver({
+      timeout,
+      plcUrl,
+      didCache,
+      fetch,
+      allowLocalhost,
+    })
   }
 }
