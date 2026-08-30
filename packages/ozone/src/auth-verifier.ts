@@ -53,6 +53,13 @@ type NullOutput = {
   }
 }
 
+export type MemberRoles = {
+  isModerator: boolean
+  isAdmin: boolean
+  isTriage: boolean
+  isVerifier: boolean
+}
+
 export type AuthVerifierOpts = {
   serviceDid: string
   adminPassword: string
@@ -73,30 +80,145 @@ export class AuthVerifier {
     this.teamService = opts.teamService
   }
 
+  admin = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
+    const creds = await this.authenticateMember(
+      reqCtx,
+      (r) => r.isAdmin,
+      'not an admin account',
+    )
+    return {
+      credentials: {
+        type: 'moderator',
+        ...creds,
+      },
+    }
+  }
+
+  adminOrAdminToken = async (
+    reqCtx: ReqCtx,
+  ): Promise<ModeratorOutput | AdminTokenOutput> => {
+    if (isBasicToken(reqCtx.req)) {
+      return this.adminToken(reqCtx)
+    }
+    return this.admin(reqCtx)
+  }
+
+  fullModerator = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
+    const creds = await this.authenticateMember(
+      reqCtx,
+      (r) => r.isModerator,
+      'not a moderator account',
+    )
+    return {
+      credentials: {
+        type: 'moderator',
+        ...creds,
+      },
+    }
+  }
+
+  fullModeratorOrAdminToken = async (
+    reqCtx: ReqCtx,
+  ): Promise<ModeratorOutput | AdminTokenOutput> => {
+    if (isBasicToken(reqCtx.req)) {
+      return this.adminToken(reqCtx)
+    }
+    return this.fullModerator(reqCtx)
+  }
+
+  moderator = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
+    return this.fullModerator(reqCtx)
+  }
+
   modOrAdminToken = async (
     reqCtx: ReqCtx,
   ): Promise<ModeratorOutput | AdminTokenOutput> => {
     if (isBasicToken(reqCtx.req)) {
       return this.adminToken(reqCtx)
-    } else {
-      return this.moderator(reqCtx)
     }
+    return this.teamMember(reqCtx)
   }
 
-  moderator = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
-    const creds = await this.standard(reqCtx)
-    if (!creds.credentials.isTriage && !creds.credentials.isVerifier) {
-      throw new AuthRequiredError('not a moderator account')
-    }
+  teamMember = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
+    const creds = await this.authenticateMember(reqCtx)
     return {
       credentials: {
-        ...creds.credentials,
         type: 'moderator',
+        ...creds,
       },
     }
   }
 
-  standard = async (reqCtx: ReqCtx): Promise<StandardOutput> => {
+  teamMemberOrAdminToken = async (
+    reqCtx: ReqCtx,
+  ): Promise<ModeratorOutput | AdminTokenOutput> => {
+    if (isBasicToken(reqCtx.req)) {
+      return this.adminToken(reqCtx)
+    }
+    return this.teamMember(reqCtx)
+  }
+
+  verifier = async (reqCtx: ReqCtx): Promise<ModeratorOutput> => {
+    const creds = await this.authenticateMember(
+      reqCtx,
+      (r) => r.isVerifier,
+      'not a verifier account',
+    )
+    return {
+      credentials: {
+        type: 'moderator',
+        ...creds,
+      },
+    }
+  }
+
+  verifierOrAdminToken = async (
+    reqCtx: ReqCtx,
+  ): Promise<ModeratorOutput | AdminTokenOutput> => {
+    if (isBasicToken(reqCtx.req)) {
+      return this.adminToken(reqCtx)
+    }
+    return this.verifier(reqCtx)
+  }
+
+  private async authenticateMember(
+    reqCtx: ReqCtx,
+    rolePredicate?: (role: MemberRoles) => boolean,
+    roleErrorMessage?: string,
+  ): Promise<{
+    iss: string
+    aud: string
+    isAdmin: boolean
+    isModerator: boolean
+    isTriage: boolean
+    isVerifier: boolean
+  }> {
+    const jwtStr = getJwtStrFromReq(reqCtx.req)
+    if (!jwtStr) {
+      throw new AuthRequiredError('missing jwt', 'MissingJwt')
+    }
+    const payload = parseJwtPayload(jwtStr)
+    const iss = payload.iss
+    if (!iss || typeof iss !== 'string') {
+      throw new AuthRequiredError('missing jwt issuer', 'BadJwt')
+    }
+
+    const member = await this.teamService.getMember(iss)
+    if (!member) {
+      throw new AuthRequiredError('not a team member', 'NotMember')
+    }
+    if (member.disabled) {
+      throw new AuthRequiredError('member is disabled', 'MemberDisabled')
+    }
+
+    const role = this.teamService.getMemberRole(member)
+    if (rolePredicate && !rolePredicate(role)) {
+      throw new AuthRequiredError(
+        roleErrorMessage ?? 'insufficient role',
+      )
+    }
+
+    const nsid = parseReqNsid(reqCtx.req)
     const getSigningKey = async (
       did: string,
       forceRefresh: boolean,
@@ -108,24 +230,54 @@ export class AuthVerifier {
       return atprotoData.signingKey
     }
 
-    const jwtStr = getJwtStrFromReq(reqCtx.req)
-    if (!jwtStr) {
-      throw new AuthRequiredError('missing jwt', 'MissingJwt')
-    }
-    const nsid = parseReqNsid(reqCtx.req)
-    const payload = await verifyJwt(
+    const verified = await verifyJwt(
       jwtStr,
       this.serviceDid,
       nsid,
       getSigningKey,
     )
+
+    return {
+      iss: verified.iss,
+      aud: verified.aud,
+      ...role,
+    }
+  }
+
+  standard = async (reqCtx: ReqCtx): Promise<StandardOutput> => {
+    const jwtStr = getJwtStrFromReq(reqCtx.req)
+    if (!jwtStr) {
+      throw new AuthRequiredError('missing jwt', 'MissingJwt')
+    }
+    const payload = parseJwtPayload(jwtStr)
     const iss = payload.iss
+    if (!iss || typeof iss !== 'string') {
+      throw new AuthRequiredError('missing jwt issuer', 'BadJwt')
+    }
 
     const member = await this.teamService.getMember(iss)
-
     if (member?.disabled) {
       throw new AuthRequiredError('member is disabled', 'MemberDisabled')
     }
+
+    const nsid = parseReqNsid(reqCtx.req)
+    const getSigningKey = async (
+      did: string,
+      forceRefresh: boolean,
+    ): Promise<string> => {
+      const atprotoData = await this.idResolver.did.resolveAtprotoData(
+        did,
+        forceRefresh,
+      )
+      return atprotoData.signingKey
+    }
+
+    const verified = await verifyJwt(
+      jwtStr,
+      this.serviceDid,
+      nsid,
+      getSigningKey,
+    )
 
     const { isAdmin, isModerator, isTriage, isVerifier } =
       this.teamService.getMemberRole(member)
@@ -133,8 +285,8 @@ export class AuthVerifier {
     return {
       credentials: {
         type: 'standard',
-        iss,
-        aud: payload.aud,
+        iss: verified.iss,
+        aud: verified.aud,
         isAdmin,
         isModerator,
         isTriage,
@@ -224,4 +376,19 @@ export const parseBasicAuth = (
   const [username, password] = parsed
   if (!username || !password) return null
   return { username, password }
+}
+
+export const parseJwtPayload = (
+  jwtStr: string,
+): { iss?: string; aud?: string; exp?: number; lxm?: string } => {
+  const parts = jwtStr.split('.')
+  if (parts.length !== 3) {
+    throw new AuthRequiredError('poorly formatted jwt', 'BadJwt')
+  }
+  try {
+    const json = ui8.toString(ui8.fromString(parts[1], 'base64url'), 'utf8')
+    return JSON.parse(json)
+  } catch (err) {
+    throw new AuthRequiredError('poorly formatted jwt', 'BadJwt')
+  }
 }

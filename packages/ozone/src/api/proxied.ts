@@ -4,7 +4,7 @@ import { ids } from '../lexicon/lexicons'
 
 export default function (server: Server, ctx: AppContext) {
   server.app.bsky.actor.getProfile({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.actor.getProfile(
         request.params,
@@ -18,7 +18,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.actor.getProfiles({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.actor.getProfiles(
         request.params,
@@ -32,7 +32,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.feed.getAuthorFeed({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.feed.getAuthorFeed(
         request.params,
@@ -46,7 +46,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.feed.searchPosts({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.feed.searchPosts(
         request.params,
@@ -60,7 +60,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.feed.getPostThread({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.feed.getPostThread(
         request.params,
@@ -74,7 +74,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.feed.getFeedGenerator({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.feed.getFeedGenerator(
         request.params,
@@ -88,7 +88,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getFollows({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.graph.getFollows(
         request.params,
@@ -102,7 +102,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getFollowers({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.graph.getFollowers(
         request.params,
@@ -116,7 +116,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getList({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.graph.getList(
         request.params,
@@ -130,7 +130,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getLists({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.graph.getLists(
         request.params,
@@ -144,7 +144,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.com.atproto.admin.searchAccounts({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.fullModeratorOrAdminToken,
     handler: async (request) => {
       if (!ctx.pdsAgent) {
         throw new Error('PDS not configured')
@@ -161,7 +161,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.com.atproto.temp.revokeAccountCredentials({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.adminOrAdminToken,
     handler: async (request) => {
       if (!ctx.pdsAgent) {
         throw new Error('PDS not configured')
@@ -174,7 +174,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.tools.ozone.hosting.getAccountHistory({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.fullModeratorOrAdminToken,
     handler: async (request) => {
       if (!ctx.pdsAgent) {
         throw new Error('PDS not configured')
@@ -191,7 +191,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.tools.ozone.signature.findRelatedAccounts({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.fullModeratorOrAdminToken,
     handler: async (request) => {
       if (!ctx.pdsAgent) {
         throw new Error('PDS not configured')
@@ -208,7 +208,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.tools.ozone.signature.searchAccounts({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.fullModeratorOrAdminToken,
     handler: async (request) => {
       if (!ctx.pdsAgent) {
         throw new Error('PDS not configured')
@@ -225,7 +225,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.tools.ozone.signature.findCorrelation({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.fullModeratorOrAdminToken,
     handler: async (request) => {
       if (!ctx.pdsAgent) {
         throw new Error('PDS not configured')
@@ -242,7 +242,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getStarterPack({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.api.app.bsky.graph.getStarterPack(
         request.params,
@@ -256,7 +256,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getStarterPacks({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.graph.getStarterPacks(
         request.params,
@@ -270,7 +270,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.graph.getActorStarterPacks({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.graph.getActorStarterPacks(
         request.params,
@@ -284,7 +284,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.feed.getLikes({
-    auth: ctx.authVerifier.modOrAdminToken,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.feed.getLikes(
         request.params,
@@ -298,7 +298,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.feed.getRepostedBy({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.feed.getRepostedBy(
         request.params,
@@ -312,7 +312,7 @@ export default function (server: Server, ctx: AppContext) {
   })
 
   server.app.bsky.actor.searchActorsTypeahead({
-    auth: ctx.authVerifier.moderator,
+    auth: ctx.authVerifier.teamMemberOrAdminToken,
     handler: async (request) => {
       const res = await ctx.appviewAgent.app.bsky.actor.searchActorsTypeahead(
         request.params,
